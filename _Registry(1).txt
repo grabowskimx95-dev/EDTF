@@ -1,0 +1,53 @@
+"""Registry for all module supervisors in DTF_EMPIRE."""
+
+from __future__ import annotations
+
+from typing import Dict, List
+
+from .module_supervisor_base import ModuleSupervisor
+from .content_pipeline_supervisor import ContentPipelineSupervisor
+from .analytics_supervisor import AnalyticsSupervisor
+from .monetization_supervisor import MonetizationSupervisor
+from .media_supervisor import MediaSupervisor
+from .lifecycle_supervisor import LifecycleSupervisor
+from .multi_channel_supervisor import MultiChannelSupervisor
+from .compliance_supervisor import ComplianceSupervisor
+
+
+class SupervisorRegistry:
+    """Creates, stores, and exposes all module supervisors."""
+
+    def __init__(self) -> None:
+        self._supervisors: Dict[str, ModuleSupervisor] = {}
+        self._initialized: bool = False
+
+    def initialize_supervisors(self) -> None:
+        """Instantiate and initialize all supervisors."""
+        if self._initialized:
+            return
+
+        supervisors: List[ModuleSupervisor] = [
+            ContentPipelineSupervisor(),
+            AnalyticsSupervisor(),
+            MonetizationSupervisor(),
+            MediaSupervisor(),
+            LifecycleSupervisor(),
+            MultiChannelSupervisor(),
+            ComplianceSupervisor(),
+        ]
+
+        for sup in supervisors:
+            sup.initialize()
+            self._supervisors[sup.name] = sup
+
+        self._initialized = True
+
+    def get_supervisor(self, name: str) -> ModuleSupervisor | None:
+        return self._supervisors.get(name)
+
+    def all_supervisors(self) -> List[ModuleSupervisor]:
+        return list(self._supervisors.values())
+
+
+# Global registry instance (can be imported by Overseer)
+supervisor_registry = SupervisorRegistry()

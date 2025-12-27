@@ -1,0 +1,175 @@
+# 🏗️ DTF EMPIRE — MASTER WORKFLOW SPECIFICATION (MODULAR ARCHITECTURE)
+Version: 1.0  
+Maintainer: Autonomous Chief Architect & Strategic Overseer (ACASO)  
+Status: ACTIVE
+
+---
+
+# 🔷 DOMAIN 1 — INPUT ACQUISITION  
+Modules inside this domain are responsible for gathering ALL data signals and raw inputs that will be used downstream in content generation, trend analysis, pricing verification, and strategic decision-making.
+
+## Components
+- **keyword_intelligence_engine/**
+- **trendpulse_engine/**
+- **competitor_intel_crawler/**
+- **reality_ingest_engine/**
+- **user_input_interface/** (manual priorities, affiliate links, jobsite uploads)
+
+## Output Responsibilities
+- Generate structured keyword clusters
+- Detect emerging trends
+- Monitor competitor content/pricing
+- Ingest real jobsite photos/videos
+- Write all normalized data to **Data Brick**
+
+---
+
+# 🔶 DOMAIN 2 — DATA BRICK CORE  
+The Data Brick is the canonical source of truth for the entire DTF Empire system.  
+Every engine reads from it; every result writes back to it.
+
+## Data Types Stored
+- Keyword clusters & topic silos  
+- Product/tool metadata  
+- Pricing history & verification flags  
+- Full content archive (HTML, images, metadata)  
+- CTA performance  
+- Affiliate link records  
+- Analytics (impressions, clicks, conversions, revenue)  
+- Jobsite media assets (tagged + cataloged)  
+- Platform-specific engagement metrics
+
+## Core Responsibilities
+- Normalize & centralize all incoming data  
+- Ensure retrievability for all engines  
+- Support clustering, tagging, relationships  
+- Maintain content versions for fallback paths  
+- Provide training-like context to improve future content
+
+---
+
+# 🔷 DOMAIN 3 — STRATEGIC OVERSIGHT  
+This is the intelligence layer that governs how the system behaves, what gets prioritized, and how resource constraints (token limits, compute, performance) affect decision-making.
+
+## Components
+- **overseer_agent/**
+- **predictive_strategy_engine/**
+- **j_curve_agent/**
+- **cfo_agent/**
+
+## Overseer Modes
+- **EXPANSION** → New content priority  
+- **OPTIMIZATION** → Refresh underperforming content  
+- **REMIX** → Repurpose archived content (low-token mode)  
+- **COOLDOWN** → Stop expensive tasks (token/CPU pressure)  
+- **PRICECHECK** → Trigger updates when pricing gaps detected  
+- **MEDIABOOST** → When real jobsite photos/videos are uploaded  
+
+## Responsibilities
+- Select daily & hourly tasks  
+- Manage token budgets  
+- Predict tomorrow’s strategy  
+- Maintain stability & prevent runaway costs  
+- Feed signals to orchestrator & dashboard
+
+---
+
+# 🔶 DOMAIN 4 — CONTENT GENERATION PIPELINE  
+This is the primary production engine of the Empire.  
+The Golden Path (V77) will validate end-to-end functionality.
+
+## Stages
+1. **Packet Creation** (keyword → topic → pillar → structured packet)  
+2. **Draft Generation** (content_engine → LLM)  
+3. **Optimization Chain**  
+   - fact_checker_agent  
+   - persona_engine  
+   - vaporizer_engine  
+   - internal_link_suggester  
+   - price_verification_service  
+   - revenue_engine  
+
+4. **Media Integration**
+   - auto-image fetch/generate  
+   - jobsite media injection  
+   - compression + ALT text  
+
+5. **SEO Packaging**
+   - schema markup  
+   - FAQ blocks  
+   - pillar-linking structure  
+
+6. **Publishing**
+   - wordpress_service  
+   - drive_service (archive)  
+
+---
+
+# 🔷 DOMAIN 5 — MULTI-CHANNEL EXPANSION  
+One content piece becomes an entire distribution campaign.
+
+## Components
+- **multi_channel_expansion_engine/**
+- **adaptive_title_engine/**
+- **snippet_engine/**
+
+## Outputs
+- Email newsletter snippets  
+- Shorts/TikTok captions  
+- Pinterest infographics  
+- LinkedIn blurbs  
+- YouTube video scripts  
+- Comparison tables  
+- FAQ pages  
+- Listicles & derivative content  
+
+---
+
+# 🔶 DOMAIN 6 — MEDIA PROCESSING  
+Ensures fast, high-quality, SEO-friendly media delivery.
+
+## Components
+- **media_optimizer_engine/**  
+- **reality_media_ingest/**  
+- **fallback_media_handler/**  
+
+## Responsibilities
+- Compress images & videos  
+- Pre-generate thumbnails  
+- Auto-tag photo/video metadata  
+- Provide fallback content when generation fails  
+- Maintain brand authenticity with real jobsite assets  
+
+---
+
+# 🔷 DOMAIN 7 — CONTENT LIFECYCLE MAINTENANCE  
+Content is never “set and forget.”  
+This domain ensures relevance, accuracy, SEO health, and revenue longevity.
+
+## Components
+- **refresh_engine/**  
+- **internal_link_optimizer/**  
+- **price_update_scheduler/**  
+- **decay_detector/**  
+
+## Responsibilities
+- Refresh old or declining content  
+- Optimize CTAs & affiliate links  
+- Update tool prices based on real-world data  
+- Detect SERP decay or ranking losses  
+- Repair internal linking structure across posts  
+
+---
+
+# 🔶 DOMAIN 8 — ANALYTICS & FEEDBACK LOOPS  
+This is the learning system that converts performance into actionable strategic intelligence.
+
+## Components
+- **analytics_service/**
+- **rank_tracker_service/**
+- **performance_analyzer/**
+- **feedback_dispatcher/**
+
+## Responsibilities
+- Track traffic, conversions, rankings, revenue  
+- Detect emerging winners

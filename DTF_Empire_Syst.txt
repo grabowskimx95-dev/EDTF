@@ -1,0 +1,22 @@
+DTF_Empire_System/
+│
+├── core/                   # THE BRAIN
+│   ├── dtf_engine.py       # The main loop (Architect -> Recruiter -> Execute)
+│   ├── dtf_router.py       # The Traffic Controller (Classifies intent)
+│   └── dtf_overseer.py     # Quality Control Logic
+│
+├── memory/                 # THE VAULT (Google Drive Synced)
+│   ├── dtf_registry.json   # Agent Skill Database
+│   ├── dtf_history.json    # Learning Logs
+│   └── templates/          # Standard Operating Procedures (SOPs)
+│
+├── agents/                 # THE WORKFORCE (Optional custom code for specific agents)
+│   ├── content_agents.py
+│   └── affiliate_agents.py
+│
+├── output/                 # THE SHIPPING DOCK
+│   ├── drafts/             # Raw text files
+│   └── staging/            # JSON ready for WordPress API
+│
+├── .env                    # KEYS (Never shared)
+└── main.py                 # The Ignition Switch

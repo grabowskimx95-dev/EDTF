@@ -1,0 +1,68 @@
+"""Central controller for Overseer operations."""
+
+from __future__ import annotations
+
+from typing import Dict, List
+
+from core_infrastructure.event_bus_interface.event_bus import event_bus
+from .overseer_mode_manager import OverseerModeManager
+from .overseer_health_aggregator import OverseerHealthAggregator
+from .overseer_action_decider import OverseerActionDecider
+from .overseer_supervisor_registry import supervisor_registry
+
+
+class OverseerController:
+    """Coordinates system-wide behavior using supervisors and the event bus."""
+
+    def __init__(self) -> None:
+        self.mode_manager = OverseerModeManager()
+        self.health_aggregator = OverseerHealthAggregator()
+        self.action_decider = OverseerActionDecider()
+        self._initialized = False
+
+    def initialize(self) -> None:
+        """Initialize supervisors and any Overseer event subscriptions."""
+        supervisor_registry.initialize_supervisors()
+        # Example: Overseer can listen to special events to adjust mode.
+        event_bus.subscribe("SYSTEM.TOKEN_PRESSURE_HIGH", self._on_token_pressure_high)
+        event_bus.subscribe("SYSTEM.TOKEN_PRESSURE_NORMAL", self._on_token_pressure_ok)
+        self._initialized = True
+
+    def _on_token_pressure_high(self, payload: Dict) -> None:
+        self.mode_manager.set_mode("COOLDOWN")
+
+    def _on_token_pressure_ok(self, payload: Dict) -> None:
+        # For now, default back to EXPANSION if things are normal.
+        self.mode_manager.set_mode("EXPANSION")
+
+    def step(self) -> List[Dict]:
+        """One Overseer 'tick' – aggregate health, choose actions, emit events."""
+        if not self._initialized:
+            self.initialize()
+
+        current_mode = self.mode_manager.mode
+        status = self.health_aggregator.collect(mode=current_mode)
+        actions = self.action_decider.decide_next_actions(status)
+
+        # Emit a status event for dashboards or logs:
+        event_bus.publish(
+            "OVERSEER.STATUS_UPDATED",
+            {
+                "mode": status.mode,
+                "supervisors": [
+                    {
+                        "name": s.name,
+                        "status": s.status,
+                        "summary": s.summary,
+                        "metrics": s.metrics,
+                    }
+                    for s in status.supervisors
+                ],
+            },
+        )
+
+        # Also publish each action as an event:
+        for action in actions:
+            event_bus.publish("OVERSEER.ACTION", action)
+
+        return actions

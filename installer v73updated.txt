@@ -1,0 +1,649 @@
+"""
+EmpireInstaller_V73.py
+The Ultimate "Warlord" Edition of DTF Command HQ.
+Combines V52 Stability + V35 Speed + Base64 Fixes.
+"""
+
+import os
+import sys
+from textwrap import dedent
+
+# --- CONFIGURATION ---
+PROJECT_DIR = "DTF_Command_HQ_V73"
+
+# =======================================================
+# 1. ENGINE CODE (V73: Robust, Timeout Fixes, Media Fallback)
+# =======================================================
+ENGINE_CODE = r'''import base64
+import json
+import logging
+import os
+import re
+import shutil
+import sqlite3
+import time
+import sys
+from datetime import date, datetime
+import requests
+import toml
+
+# --- SYSTEM CHECKS ---
+try:
+    import psutil
+except ImportError:
+    psutil = None
+
+# Robust MoviePy Import with Fallback
+MoviePy_Available = False
+try:
+    from moviepy.editor import AudioFileClip, ColorClip, CompositeVideoClip, ImageClip
+    MoviePy_Available = True
+except Exception as e:
+    print(f"Warning: MoviePy not fully available. Video rendering disabled. {e}")
+
+# -----------------------------------------
+# CONFIG
+# -----------------------------------------
+DB_FILE = "empire.db"
+SECRETS_PATH = os.path.join(".streamlit", "secrets.toml")
+LOG_DIR = "logs"
+LOG_FILE = os.path.join(LOG_DIR, "empire_activity.log")
+PACKET_ROOT = "packets"
+BACKUP_DIR = "backups"
+
+os.makedirs(LOG_DIR, exist_ok=True)
+os.makedirs(PACKET_ROOT, exist_ok=True)
+os.makedirs(BACKUP_DIR, exist_ok=True)
+
+FFMPEG_AVAILABLE = shutil.which("ffmpeg") is not None
+if not FFMPEG_AVAILABLE:
+    print("Warning: FFmpeg not found. Video rendering will be skipped.")
+
+# -----------------------------------------
+# LOGGING (With V52 Rotation)
+# -----------------------------------------
+def rotate_log(max_bytes=5 * 1024 * 1024, backups=3):
+    if not os.path.exists(LOG_FILE): return
+    try:
+        size = os.path.getsize(LOG_FILE)
+        if size <= max_bytes: return
+        for i in range(backups, 0, -1):
+            src = f"{LOG_FILE}.{i}"
+            dst = f"{LOG_FILE}.{i+1}"
+            if os.path.exists(src):
+                if i == backups: os.remove(src)
+                else: os.replace(src, dst)
+        rotated = f"{LOG_FILE}.1"
+        if os.path.exists(rotated): os.remove(rotated)
+        os.replace(LOG_FILE, rotated)
+    except Exception as e:
+        print(f"Log rotation failed: {e}")
+
+rotate_log()
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.FileHandler(LOG_FILE, encoding="utf-8"), logging.StreamHandler(sys.stdout)]
+)
+
+# -----------------------------------------
+# DB HELPERS (With Timeout Fixes)
+# -----------------------------------------
+def get_conn():
+    # V73 FIX: Added timeout=30 to prevent locking
+    return sqlite3.connect(DB_FILE, timeout=30)
+
+def init_db():
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("""CREATE TABLE IF NOT EXISTS posts (
+        id INTEGER PRIMARY KEY,
+        name TEXT UNIQUE,
+        niche TEXT,
+        link TEXT,
+        status TEXT,
+        app_url TEXT,
+        image_url TEXT,
+        video_path TEXT,
+        created_at TEXT
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS run_log (
+        id INTEGER PRIMARY KEY,
+        run_date TEXT,
+        item_name TEXT
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS error_log (
+        id INTEGER PRIMARY KEY,
+        item_name TEXT,
+        stage TEXT,
+        message TEXT,
+        created_at TEXT
+    )""")
+    
+    # Default Settings
+    c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('system_status', 'RUNNING')")
+    defaults = {"throttle_cpu": "75", "pause_cpu": "90", "throttle_ram": "80", "pause_ram": "95"}
+    for k, v in defaults.items():
+        c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (k, v))
+    
+    conn.commit()
+    conn.close()
+
+def get_setting(key, default=None):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT value FROM settings WHERE key = ?", (key,))
+    row = c.fetchone()
+    conn.close()
+    return row[0] if row else default
+
+def set_setting(key, value):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, value))
+    conn.commit()
+    conn.close()
+
+def log_error(item_name: str, stage: str, message: str):
+    message_short = (message or "").strip()[:600]
+    logging.error("Error [%s] %s: %s", stage, item_name, message_short)
+    try:
+        conn = get_conn()
+        c = conn.cursor()
+        c.execute("INSERT INTO error_log (item_name, stage, message, created_at) VALUES (?, ?, ?, ?)",
+            (item_name, stage, message_short, datetime.utcnow().isoformat()))
+        conn.commit()
+        conn.close()
+    except: pass
+
+def log_run(item_name: str):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("INSERT INTO run_log (run_date, item_name) VALUES (?, ?)", (str(date.today()), item_name))
+    conn.commit()
+    conn.close()
+
+def update_status(name: str, status: str):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("UPDATE posts SET status = ? WHERE name = ?", (status, name))
+    conn.commit()
+    conn.close()
+
+def update_media_paths(name: str, image_url: str, video_path: str):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("UPDATE posts SET image_url = ?, video_path = ? WHERE name = ?", (image_url, video_path, name))
+    conn.commit()
+    conn.close()
+
+def get_ready_item():
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT id, name, niche, link, status, app_url FROM posts WHERE status = 'Ready' LIMIT 1")
+    row = c.fetchone()
+    conn.close()
+    return row
+
+def get_pending_count():
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM posts WHERE status = 'Pending'")
+    count = c.fetchone()[0]
+    conn.close()
+    return count
+
+def insert_scouted_product(name: str, niche: str, app_url: str):
+    conn = get_conn()
+    c = conn.cursor()
+    now = datetime.utcnow().isoformat()
+    c.execute("INSERT OR IGNORE INTO posts (name, niche, link, status, app_url, image_url, created_at) VALUES (?, ?, '', 'Pending', ?, '', ?)",
+        (name, niche, app_url, now))
+    conn.commit()
+    conn.close()
+
+def check_budget(daily_limit: int) -> bool:
+    conn = get_conn()
+    c = conn.cursor()
+    today = str(date.today())
+    c.execute("SELECT COUNT(*) FROM run_log WHERE run_date = ?", (today,))
+    count = c.fetchone()[0]
+    conn.close()
+    return count < daily_limit
+
+# -----------------------------------------
+# NETWORK & RESOURCE GUARD
+# -----------------------------------------
+def load_secrets():
+    if not os.path.exists(SECRETS_PATH): return {}
+    try: return toml.load(SECRETS_PATH)
+    except: return {}
+
+def safe_post(url, json_body, headers, timeout=30, item_name="SYSTEM", stage="network"):
+    try:
+        resp = requests.post(url, json=json_body, headers=headers, timeout=timeout)
+        if resp.status_code != 200:
+            log_error(item_name, stage, f"Status {resp.status_code}: {resp.text[:300]}")
+            return None
+        return resp
+    except Exception as e:
+        log_error(item_name, stage, f"POST fail: {e}")
+        return None
+
+def resource_guard():
+    if psutil is None: return "ok"
+    try:
+        cpu = psutil.cpu_percent(interval=0.3)
+        mem = psutil.virtual_memory().percent
+        t_cpu, p_cpu = float(get_setting("throttle_cpu", "75")), float(get_setting("pause_cpu", "90"))
+        t_ram, p_ram = float(get_setting("throttle_ram", "80")), float(get_setting("pause_ram", "95"))
+        
+        if cpu >= p_cpu or mem >= p_ram:
+            log_error("SYSTEM", "system_load", f"Resource PAUSE: CPU={cpu}%, RAM={mem}%")
+            return "pause"
+        if cpu >= t_cpu or mem >= t_ram: return "throttle"
+        return "ok"
+    except: return "ok"
+
+# -----------------------------------------
+# PRODUCTION LOGIC
+# -----------------------------------------
+def run_scout_real(niche, pplx_key):
+    logging.info("🔭 Scouting niche: %s", niche)
+    url = "https://api.perplexity.ai/chat/completions"
+    headers = {"Authorization": f"Bearer {pplx_key}", "Content-Type": "application/json"}
+    payload = {
+        "model": "llama-3.1-sonar-large-128k-online",
+        "messages": [
+            {"role": "system", "content": "List 3 specific, trending, high-ticket contractor tools. Return ONLY comma-separated names."},
+            {"role": "user", "content": "Best new contractor tools 2025 for DTF Command."}
+        ]
+    }
+    resp = safe_post(url, payload, headers, item_name="SYSTEM", stage="scout")
+    if not resp: return []
+    try:
+        content = resp.json()["choices"][0]["message"]["content"]
+        return [x.strip() for x in content.split(",") if x.strip()][:3]
+    except: return []
+
+def find_app_link_real(product, pplx_key):
+    url = "https://api.perplexity.ai/chat/completions"
+    headers = {"Authorization": f"Bearer {pplx_key}", "Content-Type": "application/json"}
+    payload = {
+        "model": "llama-3.1-sonar-large-128k-online",
+        "messages": [
+            {"role": "system", "content": "Output ONLY the affiliate program or homepage URL."},
+            {"role": "user", "content": f"Affiliate program for: {product}"}
+        ]
+    }
+    resp = safe_post(url, payload, headers, item_name=product, stage="affiliate_lookup")
+    if not resp: return "https://google.com"
+    try:
+        link = resp.json()["choices"][0]["message"]["content"].strip()
+        return link if link.startswith("http") else "https://google.com"
+    except: return "https://google.com"
+
+def get_product_facts(product, pplx_key):
+    url = "https://api.perplexity.ai/chat/completions"
+    headers = {"Authorization": f"Bearer {pplx_key}", "Content-Type": "application/json"}
+    payload = {
+        "model": "llama-3.1-sonar-large-128k-online",
+        "messages": [{"role": "user", "content": f"Technical specs, pros/cons, and contractor use cases for: {product}"}]
+    }
+    resp = safe_post(url, payload, headers, item_name=product, stage="fact_check")
+    if not resp: return "General Overview"
+    try: return resp.json()["choices"][0]["message"]["content"]
+    except: return "General Overview"
+
+def create_content(product, facts, openai_key):
+    logging.info("📝 Writing content: %s", product)
+    url = "https://api.openai.com/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"}
+    sys_prompt = f"""
+    You are DTF Command (Design To Finish Contracting). 
+    Tone: Blue collar, veteran foreman, straight-talk.
+    Facts: {facts}
+    Output JSON: {{ "blog_html": "...", "social_caption": "...", "video_script": "..." }}
+    """
+    payload = {
+        "model": "gpt-4o",
+        "messages": [{"role": "system", "content": sys_prompt}, {"role": "user", "content": f"Review {product}"}],
+        "response_format": {"type": "json_object"}
+    }
+    resp = safe_post(url, payload, headers, timeout=60, item_name=product, stage="content")
+    if not resp: return None
+    try: return resp.json()["choices"][0]["message"]["content"]
+    except: return None
+
+def produce_media(product, script, openai_key, base_dir):
+    logging.info("🎥 Producing media: %s", product)
+    clean = re.sub(r"[^\w\s-]", "", product).strip().replace(" ", "_")
+    img_path, vid_path = os.path.join(base_dir, f"{clean}_img.jpg"), os.path.join(base_dir, f"{clean}_short.mp4")
+    img_url, aud_path = None, os.path.join(base_dir, f"{clean}_aud.mp3")
+    
+    headers = {"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"}
+    
+    # 1. Image
+    try:
+        r_img = requests.post("https://api.openai.com/v1/images/generations", 
+            json={"model": "dall-e-3", "prompt": f"Contractor utilizing {product} on jobsite, cinematic.", "size": "1024x1024"}, 
+            headers=headers, timeout=30)
+        if r_img.status_code == 200:
+            img_url = r_img.json()["data"][0]["url"]
+            with open(img_path, "wb") as f: f.write(requests.get(img_url).content)
+        else: img_path = None
+    except: img_path = None
+
+    # 2. Audio
+    try:
+        r_aud = requests.post("https://api.openai.com/v1/audio/speech",
+            json={"model": "tts-1", "voice": "onyx", "input": script}, headers=headers, timeout=60)
+        if r_aud.status_code == 200:
+            with open(aud_path, "wb") as f: f.write(r_aud.content)
+        else: aud_path = None
+    except: aud_path = None
+
+    # 3. Video (Fallback safe)
+    if MoviePy_Available and FFMPEG_AVAILABLE and img_path and aud_path:
+        try:
+            ac = AudioFileClip(aud_path)
+            ic = ImageClip(img_path).set_duration(ac.duration + 0.5).resize(height=1920)
+            if ic.w > 1080: ic = ic.crop(x1=(ic.w/2-540), y1=0, width=1080, height=1920)
+            bg = ColorClip(size=(1080, 1920), color=(20, 20, 20), duration=ac.duration + 0.5)
+            CompositeVideoClip([bg, ic.set_position("center")]).set_audio(ac).write_videofile(
+                vid_path, fps=24, verbose=False, logger=None, codec='libx264', audio_codec='aac'
+            )
+        except Exception as e:
+            log_error(product, "media_video", f"Render failed: {e}")
+            vid_path = None
+    else:
+        vid_path = None
+
+    return img_url, vid_path, img_path
+
+def publish_to_wordpress(name, html, smart_link, img_path, secrets):
+    wp_url, wp_user, wp_pass = secrets.get("wp_url"), secrets.get("wp_user"), secrets.get("wp_pass")
+    if not (wp_url and wp_user and wp_pass): return
+    
+    html += f"<div style='text-align:center;margin-top:20px;'><a href='{smart_link}' style='background:#c1121f;color:white;padding:12px 20px;font-weight:bold;border-radius:6px;text-decoration:none;'>CHECK PRICING</a><p style='font-size:12px;'>Recommended by DTF Command</p></div>"
+    auth = base64.b64encode(f"{wp_user}:{wp_pass}".encode()).decode()
+    headers = {"Authorization": f"Basic {auth}", "Content-Type": "application/json"}
+    
+    media_id = None
+    if img_path and os.path.exists(img_path):
+        try:
+            m_headers = headers.copy(); m_headers["Content-Type"] = "image/jpeg"; m_headers["Content-Disposition"] = "attachment; filename=feature.jpg"
+            r = requests.post(f"{wp_url.rstrip('/')}/wp-json/wp/v2/media", data=open(img_path, "rb").read(), headers=m_headers, timeout=60)
+            if r.status_code == 201: media_id = r.json().get("id")
+        except: pass
+
+    post = {"title": f"{name} – DTF Review", "content": html, "status": "draft"}
+    if media_id: post["featured_media"] = media_id
+    requests.post(f"{wp_url.rstrip('/')}/wp-json/wp/v2/posts", json=post, headers=headers, timeout=60)
+
+def production_line(row, secrets):
+    _id, name, niche, link, status, app = row
+    logging.info("--- PRODUCTION START: %s ---", name)
+    try:
+        facts = get_product_facts(name, secrets.get("pplx_key"))
+        raw = create_content(name, facts, secrets.get("openai_key"))
+        if not raw: raise Exception("Content gen failed")
+        
+        data = json.loads(raw)
+        folder = os.path.join(PACKET_ROOT, f"Packet_{date.today()}")
+        os.makedirs(folder, exist_ok=True)
+        
+        img_url, vid_path, local_img = produce_media(name, data.get("video_script", ""), secrets.get("openai_key"), folder)
+        
+        clean_track = re.sub(r"[^\w\s-]", "", name).strip().replace(" ", "_")
+        smart_link = f"{secrets.get('wp_url').rstrip('/')}/?df_track={clean_track}&dest={base64.b64encode(link.encode()).decode()}"
+        
+        publish_to_wordpress(name, data.get("blog_html"), smart_link, local_img, secrets)
+        
+        update_media_paths(name, img_url or "", vid_path or "")
+        update_status(name, "Published")
+        log_run(name)
+        logging.info("--- PRODUCTION SUCCESS: %s ---", name)
+    except Exception as e:
+        log_error(name, "production", str(e))
+        update_status(name, "Failed")
+
+def run_backup():
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    d = os.path.join(BACKUP_DIR, f"backup_{ts}")
+    os.makedirs(d, exist_ok=True)
+    if os.path.exists(DB_FILE): shutil.copy2(DB_FILE, os.path.join(d, "empire.db"))
+    if os.path.exists(SECRETS_PATH): 
+        os.makedirs(os.path.join(d, ".streamlit"), exist_ok=True)
+        shutil.copy2(SECRETS_PATH, os.path.join(d, ".streamlit", "secrets.toml"))
+
+def autopilot_loop():
+    logging.info("=== DTF WARLORD ENGINE V73 ONLINE ===")
+    init_db()
+    run_backup()
+    
+    while True:
+        try:
+            secrets = load_secrets()
+            if not (secrets.get("openai_key") and secrets.get("pplx_key")):
+                log_error("SYSTEM", "init", "Keys missing in secrets.toml")
+                time.sleep(60); continue
+            
+            if get_setting("system_status") != "RUNNING":
+                time.sleep(60); continue
+
+            state = resource_guard()
+            if state == "pause": time.sleep(60); continue
+            delay = 60 if state == "throttle" else 10
+            
+            if not check_budget(int(secrets.get("daily_run_limit", 5))):
+                time.sleep(3600); continue
+
+            item = get_ready_item()
+            if item:
+                production_line(item, secrets)
+                time.sleep(delay)
+                continue
+            
+            if get_pending_count() == 0:
+                logging.info("Pipeline empty. Scouting...")
+                items = run_scout_real("DTF Tools", secrets.get("pplx_key"))
+                for it in items:
+                    app = find_app_link_real(it, secrets.get("pplx_key"))
+                    insert_scouted_product(it, "DTF Tools", app)
+                time.sleep(60)
+            else:
+                time.sleep(300)
+
+        except Exception as e:
+            log_error("SYSTEM", "main_loop", str(e))
+            time.sleep(60)
+
+if __name__ == "__main__":
+    autopilot_loop()
+'''
+
+# =======================================================
+# 2. DASHBOARD CODE (V73: V52 Notifications + V35 Speed Input)
+# =======================================================
+DASH_CODE = r'''import os
+import sqlite3
+import pandas as pd
+import streamlit as st
+import toml
+from datetime import date, datetime
+
+# --- CONFIG ---
+DB_FILE = "empire.db"
+st.set_page_config(page_title="DTF Command HQ V73", page_icon="🏗️", layout="wide")
+
+# --- DB HELPERS (Decoupled from Engine) ---
+def get_conn(): return sqlite3.connect(DB_FILE, timeout=30)
+
+def get_counts():
+    try:
+        conn = get_conn()
+        c = conn.cursor()
+        data = {s: c.execute("SELECT COUNT(*) FROM posts WHERE status=?", (s,)).fetchone()[0] for s in ["Pending", "Ready", "Published", "Failed"]}
+        conn.close()
+        return data
+    except: return {"Pending":0, "Ready":0, "Published":0, "Failed":0}
+
+def get_pending_posts():
+    try:
+        conn = get_conn()
+        df = pd.read_sql_query("SELECT id, name, app_url, link FROM posts WHERE status='Pending'", conn)
+        conn.close()
+        return df
+    except: return pd.DataFrame()
+
+def save_bulk_links(df):
+    conn = get_conn()
+    c = conn.cursor()
+    count = 0
+    for _, row in df.iterrows():
+        l = (row.get("link") or "").strip()
+        if l and (l.startswith("http://") or l.startswith("https://")):
+            c.execute("UPDATE posts SET link=?, status='Ready' WHERE id=?", (l, int(row["id"])))
+            count += 1
+    conn.commit()
+    conn.close()
+    return count
+
+def get_recent_errors():
+    try:
+        conn = get_conn()
+        df = pd.read_sql_query("SELECT * FROM error_log ORDER BY id DESC LIMIT 50", conn)
+        conn.close()
+        return df
+    except: return pd.DataFrame()
+
+# --- SIDEBAR ---
+counts = get_counts()
+st.sidebar.title("🏗️ DTF WARLORD V73")
+st.sidebar.markdown(f"**Status:** {'🟢 RUNNING' if os.path.exists('empire.db') else '🔴 OFFLINE'}")
+st.sidebar.metric("Ready for Production", counts["Ready"])
+st.sidebar.metric("Needs Links", counts["Pending"])
+st.sidebar.metric("Published", counts["Published"])
+nav = st.sidebar.radio("Navigation", ["🏠 Command Center", "⚡ Rapid Link Entry", "📊 Pipeline", "🧯 Errors & Logs"])
+
+# --- PAGES ---
+if nav == "🏠 Command Center":
+    st.title("🏠 Command Center")
+    c1, c2, c3 = st.columns(3)
+    c1.info(f"PENDING: {counts['Pending']}")
+    c2.success(f"PUBLISHED: {counts['Published']}")
+    c3.error(f"FAILED: {counts['Failed']}")
+    
+    st.markdown("### 🚨 Notification Center")
+    errs = get_recent_errors()
+    if not errs.empty:
+        for _, row in errs.head(5).iterrows():
+            st.warning(f"**{row['stage']}**: {row['message']} ({row['created_at']})")
+    else:
+        st.success("No recent system errors.")
+
+elif nav == "⚡ Rapid Link Entry":
+    st.title("⚡ Rapid Link Entry (V35 Speed Mode)")
+    st.info("Paste affiliate links directly into the table below. Bulk edit supported.")
+    df = get_pending_posts()
+    if df.empty:
+        st.success("No pending items! Engine is scouting...")
+    else:
+        edited = st.data_editor(
+            df,
+            column_config={
+                "id": st.column_config.NumberColumn(disabled=True),
+                "name": st.column_config.TextColumn(disabled=True),
+                "app_url": st.column_config.LinkColumn("Apply Here"),
+                "link": st.column_config.TextColumn("Paste Affiliate Link Here", required=True)
+            },
+            hide_index=True,
+            key="rapid_editor"
+        )
+        if st.button("✅ Save & Queue for Production"):
+            n = save_bulk_links(edited)
+            st.success(f"Queued {n} items for the engine!")
+            st.rerun()
+
+elif nav == "📊 Pipeline":
+    st.title("📊 Production Pipeline")
+    conn = get_conn()
+    df = pd.read_sql_query("SELECT name, niche, status, link, created_at FROM posts ORDER BY id DESC", conn)
+    conn.close()
+    st.dataframe(df, use_container_width=True)
+
+elif nav == "🧯 Errors & Logs":
+    st.title("🧯 System Logs")
+    st.dataframe(get_recent_errors(), use_container_width=True)
+    if st.button("Refresh"): st.rerun()
+'''
+
+# =======================================================
+# 3. SUPPORTING FILES
+# =======================================================
+REQUIREMENTS = """streamlit
+pandas
+requests
+moviepy<2.0
+imageio
+imageio-ffmpeg
+toml
+psutil
+"""
+
+LAUNCH_BAT = r"""@echo off
+TITLE DTF Command HQ - Warlord V73
+ECHO =================================================
+ECHO   DTF COMMAND HQ - WARLORD EDITION V73
+ECHO   Stability: V52 | Speed: V35 | Core: Empire
+ECHO =================================================
+ECHO.
+ECHO [1/2] Checking dependencies...
+pip install -r requirements.txt
+ECHO.
+ECHO [2/2] Launching Engine & Dashboard...
+start /B pythonw engine.py
+streamlit run dtf_command_hq.py
+PAUSE
+"""
+
+SECRETS_TEMPLATE = """# .streamlit/secrets.toml
+openai_key   = "sk-..."
+pplx_key     = "pplx-..."
+wp_url       = "https://your-site.com"
+wp_user      = "admin"
+wp_pass      = "app-password"
+daily_run_limit = 10
+"""
+
+# =======================================================
+# 4. INSTALLATION LOGIC
+# =======================================================
+def create(path, content):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w', encoding='utf-8') as f: f.write(content.strip())
+
+def install():
+    base = os.path.join(os.getcwd(), PROJECT_DIR)
+    print(f"Installing to: {base}")
+    
+    create(os.path.join(base, "engine.py"), ENGINE_CODE)
+    create(os.path.join(base, "dtf_command_hq.py"), DASH_CODE)
+    create(os.path.join(base, "requirements.txt"), REQUIREMENTS)
+    create(os.path.join(base, "launch.bat"), LAUNCH_BAT)
+    create(os.path.join(base, ".streamlit", "secrets.toml"), SECRETS_TEMPLATE)
+    
+    print("\n✅ DTF WARLORD V73 INSTALLED SUCCESSFULLY.")
+    print("-------------------------------------------")
+    print(f"1. Go to folder: {PROJECT_DIR}")
+    print("2. Edit .streamlit/secrets.toml with your keys.")
+    print("3. Run launch.bat")
+
+if __name__ == "__main__":
+    install()

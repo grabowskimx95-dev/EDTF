@@ -1,0 +1,19 @@
+# The Master "Router" Logic
+def master_controller(user_input):
+    # Step 1: Analyze intent
+    task_type = analyze_intent(user_input)
+
+    if task_type == "new_blog_post":
+        # Step 2: Route to Researcher
+        raw_data = researcher_agent.run(user_input)
+        
+        # Step 3: Route to Writer
+        draft = writer_agent.run(raw_data)
+        
+        # Step 4: Route to Monetizer (The most important part for DTF)
+        final_content = monetizer_agent.run(draft)
+        
+        return final_content
+        
+    elif task_type == "social_media_blast":
+        return social_agent.run(user_input)

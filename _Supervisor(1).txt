@@ -1,0 +1,56 @@
+"""Supervisor for multi-channel expansion across platforms."""
+
+from __future__ import annotations
+
+from typing import Any, Dict
+
+from .module_supervisor_base import ModuleSupervisor
+from core_infrastructure.event_bus_interface.event_bus import event_bus
+
+
+class MultiChannelSupervisor(ModuleSupervisor):
+    """Monitors multi-channel content expansion (social, email, etc.)."""
+
+    def __init__(self) -> None:
+        super().__init__(name="multi_channel")
+        self.state.update(
+            {
+                "expansions_created": 0,
+                "channels_active": 0,
+            }
+        )
+
+    def initialize(self) -> None:
+        event_bus.subscribe(
+            "MULTICHANNEL.EXPANSION_CREATED", self._on_expansion_created
+        )
+        self.mark_initialized()
+
+    def _on_expansion_created(self, payload: Dict[str, Any]) -> None:
+        self.state["expansions_created"] += 1
+        channels = payload.get("channels", [])
+        self.state["channels_active"] = max(
+            self.state.get("channels_active", 0), len(channels)
+        )
+
+    def handle_event(self, event_type: str, payload: Dict[str, Any]) -> None:
+        return
+
+    def get_health_snapshot(self) -> Dict[str, Any]:
+        expansions = int(self.state["expansions_created"])
+        channels = int(self.state["channels_active"])
+
+        if expansions == 0:
+            status = "idle"
+            summary = "No multi-channel expansions created yet."
+        else:
+            status = "ok"
+            summary = "Multi-channel expansion is active."
+
+        return {
+            "name": self.name,
+            "status": status,
+            "summary": summary,
+            "expansions_created": expansions,
+            "channels_active": channels,
+        }

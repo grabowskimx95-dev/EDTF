@@ -1,0 +1,70 @@
+DTF_Empire/
+│
+├── domain_input_acquisition/
+│   ├── keyword_intelligence_engine
+│   ├── trendpulse_engine
+│   ├── competitor_intel_crawler
+│   ├── reality_ingest_engine
+│   └── user_input_interface
+│
+├── data_brick_core/
+│   ├── data_models/  (products, tools, price history, metadata, content history, tags, assets)
+│   ├── storage_layer/ (database or object store)
+│   ├── tagging_and_clustering/
+│   └── media_asset_store/
+│
+├── strategic_oversight/
+│   ├── overseer_agent
+│   ├── predictive_strategy_engine
+│   ├── j_curve_agent
+│   └── cfo_agent
+│
+├── content_generation_pipeline/
+│   ├── content_engine
+│   ├── fact_checker_agent
+│   ├── persona_engine
+│   ├── vaporizer_engine
+│   ├── linking_engine
+│   ├── price_verification_service
+│   ├── revenue_engine
+│   └── publish_and_archive (wordpress, media store, metadata store)
+│
+├── multi_channel_expansion/
+│   ├── multi_channel_expansion_engine
+│   ├── adaptive_title_engine
+│   └── snippet_engine
+│
+├── media_processing/
+│   ├── media_optimizer_engine
+│   ├── reality_media_ingest
+│   └── fallback_media_handler (for recovery)
+│
+├── content_lifecycle_maintenance/
+│   ├── refresh_engine
+│   ├── internal_link_optimizer
+│   ├── price_update_scheduler
+│   └── decay_detector
+│
+├── analytics_feedback_loop/
+│   ├── analytics_service
+│   ├── rank_tracker_service
+│   ├── performance_analyzer
+│   └── feedback_dispatcher (feeds overseer, re-prioritizes content)
+│
+├── outreach_and_monetization/
+│   ├── affiliate_funnel_manager
+│   ├── email_funnel_service
+│   ├── cta_optimizer
+│   └── monetization_dashboard_connector
+│
+├── dashboard_and_control_tower/
+│   ├── dashboard_backend
+│   ├── dashboard_frontend
+│   ├── config_manager
+│   └── manual_override_interface
+│
+└── core_infrastructure/
+    ├── event_bus_interface
+    ├── retry_and_error_handler
+    ├── logging_and_metrics
+    └── config_and_env_manager

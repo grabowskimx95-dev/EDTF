@@ -1,0 +1,55 @@
+"""Supervisor for content lifecycle maintenance and refresh logic."""
+
+from __future__ import annotations
+
+from typing import Any, Dict
+
+from .module_supervisor_base import ModuleSupervisor
+from core_infrastructure.event_bus_interface.event_bus import event_bus
+
+
+class LifecycleSupervisor(ModuleSupervisor):
+    """Tracks content refresh, decay detection, and lifecycle events."""
+
+    def __init__(self) -> None:
+        super().__init__(name="lifecycle")
+        self.state.update(
+            {
+                "items_tracked": 0,
+                "refresh_pending": 0,
+                "decay_alerts": 0,
+            }
+        )
+
+    def initialize(self) -> None:
+        event_bus.subscribe("CONTENT.DECAY_DETECTED", self._on_decay_detected)
+        event_bus.subscribe("CONTENT.REFRESH_SCHEDULED", self._on_refresh_scheduled)
+        self.mark_initialized()
+
+    def _on_decay_detected(self, payload: Dict[str, Any]) -> None:
+        self.state["decay_alerts"] += 1
+
+    def _on_refresh_scheduled(self, payload: Dict[str, Any]) -> None:
+        self.state["refresh_pending"] += 1
+
+    def handle_event(self, event_type: str, payload: Dict[str, Any]) -> None:
+        return
+
+    def get_health_snapshot(self) -> Dict[str, Any]:
+        refresh_pending = int(self.state["refresh_pending"])
+        decay_alerts = int(self.state["decay_alerts"])
+
+        if decay_alerts > 20:
+            status = "warning"
+            summary = "Many content items show ranking/engagement decay."
+        else:
+            status = "ok"
+            summary = "Content lifecycle is under control."
+
+        return {
+            "name": self.name,
+            "status": status,
+            "summary": summary,
+            "refresh_pending": refresh_pending,
+            "decay_alerts": decay_alerts,
+        }

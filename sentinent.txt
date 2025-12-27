@@ -1,0 +1,191 @@
+import google.generativeai as genai
+import json
+import os
+import re
+import time
+
+# --- CONFIGURATION ---
+API_KEY = "YOUR_GEMINI_API_KEY_HERE"
+genai.configure(api_key=API_KEY)
+MODEL_NAME = 'gemini-1.5-flash'
+REGISTRY_FILE = "dtf_registry.json"
+HISTORY_FILE = "dtf_learning_log.json"
+
+# --- PERSISTENT STORAGE (BRAIN & MEMORY) ---
+
+def load_json(filename, default_data):
+    if not os.path.exists(filename):
+        save_json(filename, default_data)
+        return default_data
+    with open(filename, "r") as f:
+        return json.load(f)
+
+def save_json(filename, data):
+    with open(filename, "w") as f:
+        json.dump(data, f, indent=4)
+
+# --- THE EXECUTIVE ORGANS ---
+
+def dtf_overseer_critique(plan, user_goal):
+    """
+    THE OVERSEER (Phase 1): Critiques the Plan before execution.
+    """
+    print("   👁️  OVERSEER: Reviewing the battle plan...")
+    
+    prompt = f"""
+    GOAL: {user_goal}
+    PROPOSED PLAN: {json.dumps(plan)}
+    
+    Role: You are a strict Project Manager. 
+    Analyze this plan. Is it missing any steps? Is the logic sound?
+    
+    If it is GOOD, output: "APPROVED"
+    If it is BAD, output: "REJECTED: [Reason why]"
+    """
+    model = genai.GenerativeModel(MODEL_NAME)
+    response = model.generate_content(prompt)
+    
+    if "APPROVED" in response.text:
+        print("   ✅ OVERSEER: Plan Approved.")
+        return True, ""
+    else:
+        print(f"   ❌ OVERSEER: Plan Rejected. Reason: {response.text}")
+        return False, response.text
+
+def dtf_overseer_quality_control(final_content, user_goal):
+    """
+    THE OVERSEER (Phase 2): Critiques the Final Product.
+    """
+    print("   👁️  OVERSEER: Inspecting final build...")
+    
+    prompt = f"""
+    GOAL: {user_goal}
+    FINAL CONTENT: {final_content[:3000]}... (truncated)
+    
+    Role: You are a Lead Editor.
+    Does this meet the goal? Is it high quality? 
+    Check for: formatting, tone, and completeness.
+    
+    If PASS, output: "PASS"
+    If FAIL, output: "FAIL: [Specific Feedback]"
+    """
+    model = genai.GenerativeModel(MODEL_NAME)
+    response = model.generate_content(prompt)
+    
+    if "PASS" in response.text:
+        return True, ""
+    else:
+        return False, response.text
+
+def dtf_historian(user_goal, plan, outcome):
+    """
+    THE HISTORIAN: Learns from the session.
+    """
+    history = load_json(HISTORY_FILE, [])
+    
+    entry = {
+        "timestamp": time.time(),
+        "goal": user_goal,
+        "plan_used": plan,
+        "outcome": outcome
+    }
+    history.append(entry)
+    save_json(HISTORY_FILE, history)
+    print("   📚 HISTORIAN: Session logged to long-term memory.")
+
+# --- THE OPERATIONAL CORE ---
+
+def dtf_architect(user_goal, current_roster, feedback=""):
+    """
+    The Architect now accepts 'feedback' to retry bad plans.
+    """
+    roster_list = ", ".join(current_roster.keys())
+    
+    prompt = f"""
+    GOAL: {user_goal}
+    AVAILABLE AGENTS: {roster_list}
+    PREVIOUS FEEDBACK (IF ANY): {feedback}
+    
+    Design a workflow. If feedback exists, fix the previous errors.
+    If you need a new agent, invent a name.
+    
+    Output JSON: [ {{"step": 1, "agent": "Name", "instruction": "Task"}} ]
+    """
+    
+    model = genai.GenerativeModel(MODEL_NAME, generation_config={"response_mime_type": "application/json"})
+    response = model.generate_content(prompt)
+    try:
+        return json.loads(response.text)
+    except:
+        return []
+
+def dtf_recruiter(agent_name):
+    print(f"   ✨ RECRUITING: Building '{agent_name}' agent...")
+    prompt = f"Create a system instruction for a '{agent_name}' for a Construction Brand. Professional, profitable tone."
+    model = genai.GenerativeModel(MODEL_NAME)
+    return model.generate_content(prompt).text.strip()
+
+# --- THE SELF-CORRECTING PIPELINE ---
+
+def run_sentient_hive(user_goal):
+    print(f"\n🧠 SENTIENT HIVE ACTIVATED: '{user_goal}'")
+    registry = load_json(REGISTRY_FILE, {
+        "Researcher": "Fact finder. Technical specs only.",
+        "Writer": "Construction blogger. Authoritative tone."
+    })
+    
+    # 1. PLANNING LOOP (Think before acting)
+    plan_attempts = 0
+    feedback = ""
+    valid_plan = []
+    
+    while plan_attempts < 3:
+        plan = dtf_architect(user_goal, registry, feedback)
+        is_good, critique = dtf_overseer_critique(plan, user_goal)
+        
+        if is_good:
+            valid_plan = plan
+            break
+        else:
+            feedback = critique
+            plan_attempts += 1
+            print("   🔄 RE-PLANNING...")
+            
+    if not valid_plan:
+        return "❌ SYSTEM FAILURE: Could not devise a valid plan."
+
+    # 2. EXECUTION LOOP
+    context_data = ""
+    for step in valid_plan:
+        agent = step['agent']
+        
+        # Self-Growth: Create Agent if missing
+        if agent not in registry:
+            registry[agent] = dtf_recruiter(agent)
+            save_json(REGISTRY_FILE, registry)
+        
+        print(f"   ⚙️  EXECUTING: [{agent}]")
+        worker = genai.GenerativeModel(MODEL_NAME, system_instruction=registry[agent])
+        response = worker.generate_content(f"CONTEXT: {context_data}\nTASK: {step['instruction']}")
+        context_data = response.text
+
+    # 3. REVIEW LOOP (Check work before shipping)
+    is_pass, qc_feedback = dtf_overseer_quality_control(context_data, user_goal)
+    
+    if not is_pass:
+        print("   ⚠️ QUALITY CONTROL FAILED. Sending back to Writer...")
+        # Simple fix loop: Force the writer to apply the feedback
+        fixer = genai.GenerativeModel(MODEL_NAME, system_instruction=registry.get("Writer", "You are a writer."))
+        context_data = fixer.generate_content(f"ORIGINAL DRAFT: {context_data}\nCRITIQUE: {qc_feedback}\nTASK: Fix it.").text
+        print("   ✅ REVISION COMPLETE.")
+
+    # 4. LEARNING
+    dtf_historian(user_goal, valid_plan, "SUCCESS" if is_pass else "FIXED")
+    
+    return context_data
+
+# --- RUN ---
+if __name__ == "__main__":
+    # Challenge the system
+    output = run_sentient_hive("Create a LinkedIn post summarizing 2025 OSHA Ladder Safety updates")
+    print("\n" + "="*50 + "\n" + output)

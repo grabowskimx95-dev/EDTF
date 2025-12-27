@@ -1,0 +1,62 @@
+project_root/
+│
+├── src/
+│   ├── main_submitter_async.py
+│   ├── main_retriever.py
+│   ├── main_trendpulse.py
+│   ├── main_refresh.py
+│   │
+│   ├── domain/
+│   │   ├── product.py
+│   │   ├── affiliate_offer.py
+│   │   ├── trend_signal.py
+│   │   ├── content_packet.py
+│   │   ├── batch_spec.py
+│   │   ├── ledger_entry.py
+│   │   ├── asset.py
+│   │   └── job_run.py
+│   │
+│   ├── engines/
+│   │   ├── whale_engine.py
+│   │   ├── taxonomy_engine.py
+│   │   ├── revenue_engine.py
+│   │   ├── trendpulse_engine.py
+│   │   ├── affiliate_engine.py
+│   │   ├── strategy_engine.py
+│   │   ├── programmatic_seo_engine.py
+│   │   ├── content_engine.py
+│   │   ├── visual_engine.py
+│   │   ├── link_graph_engine.py
+│   │   └── refresh_engine.py
+│   │
+│   ├── agents/
+│   │   ├── cfo_agent.py
+│   │   ├── strategist_agent.py
+│   │   ├── persona_agent.py
+│   │   ├── fact_checker_agent.py
+│   │   ├── maintenance_agent.py
+│   │   └── orchestrator_agent.py
+│   │
+│   └── services/
+│       ├── openai_service.py
+│       ├── wordpress_service.py
+│       ├── drive_service.py
+│       ├── analytics_service.py
+│       ├── trend_service.py
+│       ├── serp_service.py
+│       ├── affiliate_service.py
+│       └── supabase_service.py
+│
+├── config/
+│   ├── settings.py
+│   └── logging_config.py
+│
+├── src/utils/
+│   └── resiliency.py
+│
+└── tests/
+    ├── unit/
+    │   ├── test_whale_engine.py
+    │   └── test_strategy_engine.py
+    └── integration/
+        └── test_full_submitter_flow.py

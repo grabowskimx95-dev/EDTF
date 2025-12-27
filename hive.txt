@@ -1,0 +1,140 @@
+import google.generativeai as genai
+import json
+import os
+import re
+
+# --- CONFIGURATION ---
+API_KEY = "YOUR_GEMINI_API_KEY_HERE" # <--- PASTE KEY HERE
+genai.configure(api_key=API_KEY)
+MODEL_NAME = 'gemini-1.5-flash'
+REGISTRY_FILE = "dtf_registry.json"
+
+# --- THE "MEMORY" (REGISTRY) ---
+
+def load_registry():
+    """Loads the agent skills from the permanent file."""
+    if not os.path.exists(REGISTRY_FILE):
+        # Default starting agents
+        defaults = {
+            "Researcher": "You are a Researcher. Output purely factual specs and code requirements.",
+            "Writer": "You are a Construction Writer. Write authoritative content based on research.",
+            "Monetizer": "You are a Sales Expert. Inject affiliate links into content."
+        }
+        save_registry(defaults)
+        return defaults
+    with open(REGISTRY_FILE, "r") as f:
+        return json.load(f)
+
+def save_registry(registry):
+    """Saves new skills to the permanent file."""
+    with open(REGISTRY_FILE, "w") as f:
+        json.dump(registry, f, indent=4)
+
+# --- THE META-AGENTS ---
+
+def dtf_architect(user_goal, current_roster):
+    """
+    THE ARCHITECT: Decides WHO is needed to solve the problem.
+    It can request agents that don't exist yet.
+    """
+    roster_list = ", ".join(current_roster.keys())
+    
+    prompt = f"""
+    GOAL: {user_goal}
+    AVAILABLE AGENTS: {roster_list}
+    
+    Design a step-by-step workflow to achieve this goal.
+    If you need a specialist NOT in the Available Agents list, invent a name for them (e.g., 'TikTok_Specialist').
+    
+    Output strictly valid JSON format like this:
+    [
+        {{"step": 1, "agent": "Researcher", "instruction": "Find specs for X"}},
+        {{"step": 2, "agent": "TikTok_Specialist", "instruction": "Write a script using specs from step 1"}}
+    ]
+    """
+    
+    model = genai.GenerativeModel(MODEL_NAME, generation_config={"response_mime_type": "application/json"})
+    response = model.generate_content(prompt)
+    
+    # Cleaning the response to ensure valid JSON
+    try:
+        plan = json.loads(response.text)
+        return plan
+    except:
+        # Fallback if raw text comes back dirty
+        clean_text = re.search(r'\[.*\]', response.text, re.DOTALL).group(0)
+        return json.loads(clean_text)
+
+def dtf_recruiter(agent_name):
+    """
+    THE RECRUITER: Builds new agents from scratch.
+    """
+    print(f"   ✨ DETECTED GAP: We need a '{agent_name}'. Building this agent now...")
+    
+    prompt = f"""
+    Create a System Instruction (Persona) for a new AI Agent named '{agent_name}'.
+    The Agent works for 'Design To Finish Contracting'.
+    Tone: Professional, Authoritative, High-Value.
+    Output ONLY the system instruction paragraph.
+    """
+    
+    model = genai.GenerativeModel(MODEL_NAME)
+    response = model.generate_content(prompt)
+    return response.text.strip()
+
+# --- THE ENGINE CORE ---
+
+def run_hive(user_goal):
+    print(f"\n🧠 THE HIVE IS THINKING: '{user_goal}'")
+    
+    # 1. Load Memory
+    registry = load_registry()
+    
+    # 2. Architect designs the plan
+    plan = dtf_architect(user_goal, registry)
+    print(f"📋 PLAN GENERATED: {len(plan)} Steps.")
+    
+    context_data = "" # Passed from agent to agent
+    
+    # 3. Execute the plan
+    for step in plan:
+        agent_name = step['agent']
+        task_instruction = step['instruction']
+        
+        # SELF-GROWTH LOGIC:
+        if agent_name not in registry:
+            # We don't have this agent. Build it.
+            new_persona = dtf_recruiter(agent_name)
+            registry[agent_name] = new_persona
+            save_registry(registry) # Save to permanent memory
+            print(f"   💾 NEW AGENT SAVED: {agent_name} is now part of the system.")
+            
+        # 4. Agent Execution
+        print(f"   ⚙️  Step {step['step']}: [{agent_name}] working...")
+        
+        active_agent = genai.GenerativeModel(
+            MODEL_NAME, 
+            system_instruction=registry[agent_name]
+        )
+        
+        # Combine previous context with specific task
+        full_prompt = f"CONTEXT SO FAR:\n{context_data}\n\nYOUR TASK: {task_instruction}"
+        response = active_agent.generate_content(full_prompt)
+        
+        # Update context
+        context_data = response.text
+        
+    return context_data
+
+# --- RUN IT ---
+if __name__ == "__main__":
+    # FIRST RUN: Ask for something normal
+    # output = run_hive("Write a blog post about Dewalt Drills")
+    
+    # SECOND RUN: Ask for something the system DOESN'T know yet
+    # The system will realize it needs a "Social Media Manager" and create it automatically.
+    final_output = run_hive("Write a 30-second TikTok script about waterproof glue")
+    
+    print("\n" + "="*50)
+    print("FINAL OUTPUT:\n")
+    print(final_output)

@@ -1,0 +1,145 @@
+import os
+import sys
+import json
+import time
+import google.generativeai as genai
+
+# ==========================================
+# CONFIGURATION
+# ==========================================
+PROJECT_ROOT = "DTF_EMPIRE"
+# Add root to path so we can import the event bus
+sys.path.append(os.path.abspath(PROJECT_ROOT))
+
+# Import the Event Bus
+from core_infrastructure.event_bus_interface.event_bus import event_bus
+
+# PATHS
+REGISTRY_PATH = os.path.join(PROJECT_ROOT, "data_brick_core", "data_models", "agent_registry.py")
+HISTORY_FILE = os.path.join(PROJECT_ROOT, "data_brick_core", "storage_layer", "job_history.json")
+
+# ==========================================
+# 1. DYNAMIC AGENT LOADER (The "Universal Agent" Pattern)
+# ==========================================
+class UniversalAgent:
+    """
+    A flexible agent wrapper that loads its persona directly from the Registry.
+    Adapts the 'hive.txt' logic for V80 architecture.
+    """
+    def __init__(self, agent_name, api_key):
+        self.name = agent_name
+        self.api_key = api_key
+        self.persona = self._load_persona()
+        
+        genai.configure(api_key=self.api_key)
+        self.model = genai.GenerativeModel('gemini-1.5-flash', system_instruction=self.persona)
+
+    def _load_persona(self):
+        """Reads the persona string dynamically from the registry file."""
+        if not os.path.exists(REGISTRY_PATH):
+            return f"You are {self.name}. Act professionally."
+        
+        # We parse the file manually to avoid import caching issues during runtime expansion
+        with open(REGISTRY_PATH, "r", encoding="utf-8") as f:
+            content = f.read()
+            
+        # Quick-and-dirty parse to find the agent's definition
+        try:
+            # Look for: AGENTS["Name"] = """..."""
+            start_marker = f'AGENTS["{self.name}"] = """'
+            start_idx = content.find(start_marker)
+            if start_idx == -1:
+                print(f"⚠️ Warning: Agent '{self.name}' not found in Registry. Using default.")
+                return f"You are {self.name}."
+            
+            start_content = start_idx + len(start_marker)
+            end_idx = content.find('"""', start_content)
+            return content[start_content:end_idx].strip()
+        except Exception as e:
+            print(f"❌ Error loading persona for {self.name}: {e}")
+            return f"You are {self.name}."
+
+    def run(self, input_context):
+        print(f"   🤖 {self.name.upper().replace('_', ' ')}: Working...")
+        try:
+            response = self.model.generate_content(f"INPUT CONTEXT:\n{input_context}")
+            return response.text
+        except Exception as e:
+            print(f"   ❌ Error: {e}")
+            return "[Agent Error]"
+
+# ==========================================
+# 2. THE TIER 2 PIPELINE (The "Diamond Path")
+# ==========================================
+def run_advanced_pipeline(api_key, topic):
+    print("="*60)
+    print("      DTF EMPIRE: ORCHESTRATOR MAX (TIER 2)      ")
+    print("="*60)
+    
+    event_bus.publish("JOB.STARTED", {"topic": topic})
+
+    # --- STEP 1: RESEARCH ---
+    # We use the Base Researcher (Foundation)
+    researcher = UniversalAgent("Researcher", api_key) # Maps to default if not in Tier 1/2
+    facts = researcher.run(f"Research technical specs for: {topic}")
+    
+    # --- STEP 2: STRATEGY (Tier 1) ---
+    strategist = UniversalAgent("SEO_Strategy_Architect", api_key)
+    seo_plan = strategist.run(f"Create an SEO outline and URL slug for: {topic}\nBased on: {facts}")
+
+    # --- STEP 3: LONG-FORM WRITING (Tier 2) ---
+    writer = UniversalAgent("Long_Form_Authority_Writer", api_key)
+    full_draft = writer.run(f"Write a comprehensive guide.\nTOPIC: {topic}\nSEO PLAN: {seo_plan}\nFACTS: {facts}")
+
+    # --- STEP 4: VISUALIZATION (Tier 2) ---
+    visualizer = UniversalAgent("UX_UI_Content_Visualization_Agent", api_key)
+    visual_plan = visualizer.run(f"Suggest visuals for this draft: {full_draft[:2000]}...")
+
+    # --- STEP 5: MONETIZATION (Tier 1) ---
+    banker = UniversalAgent("Affiliate_Revenue_Engineer", api_key)
+    monetized_content = banker.run(f"Inject monetization into this draft: {full_draft}")
+
+    # --- STEP 6: SOCIAL EXPANSION (Tier 2) ---
+    social_agent = UniversalAgent("Social_Distribution_Agent", api_key)
+    social_pack = social_agent.run(f"Create social posts for this article: {monetized_content[:2000]}...")
+
+    # --- FINAL ASSEMBLY ---
+    final_package = f"""
+# 🚀 DTF CONTENT PACKAGE: {topic}
+    
+## 📄 BLOG POST (Monetized)
+{monetized_content}
+
+---
+## 🎨 VISUAL ASSET PLAN
+{visual_plan}
+
+---
+## 📱 SOCIAL MEDIA EXPANSION
+{social_pack}
+    """
+
+    event_bus.publish("JOB.COMPLETED", {"topic": topic})
+    
+    print("\n" + "="*30 + " JOB COMPLETE " + "="*30)
+    print("✅ Content, SEO, Monetization, Visuals, and Socials generated.")
+    
+    filename = f"tier2_output_{topic.replace(' ', '_')[:20]}.md"
+    with open(filename, "w", encoding='utf-8') as f:
+        f.write(final_package)
+    print(f"📂 Saved to: {filename}")
+
+# ==========================================
+# 3. EXECUTION
+# ==========================================
+if __name__ == "__main__":
+    if not os.path.exists(REGISTRY_PATH):
+        print("❌ CRITICAL: Registry file missing. Run 'initialize_empire.py' then 'bulk_recruit_tier1.py' first.")
+        sys.exit(1)
+
+    print("ℹ️  Tier 2 Pipeline Ready.")
+    key = input("🔑 ENTER GEMINI API KEY: ").strip()
+    topic = input("📝 ENTER TOPIC (e.g., 'Best Cordless Framer'): ").strip()
+    
+    if key and topic:
+        run_advanced_pipeline(key, topic)

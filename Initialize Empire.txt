@@ -1,0 +1,293 @@
+import os
+import sys
+import json
+import time
+
+# ==============================================================================
+# 1. ARCHITECTURAL BLUEPRINT (V80 SPECIFICATION)
+# ==============================================================================
+PROJECT_ROOT = "DTF_EMPIRE"
+
+# Defined based on 'modular core.txt' and 'DTF_EMPIRE/.txt'
+STRUCTURE = {
+    "core_infrastructure": [
+        "event_bus_interface", "retry_and_error_handler", 
+        "logging_and_metrics", "config_and_env_manager"
+    ],
+    "data_brick_core": [
+        "data_models", "storage_layer", "tagging_and_clustering", 
+        "media_asset_store", "brick_query_interface"
+    ],
+    "strategic_oversight": [
+        "overseer_agent", "predictive_strategy_engine", "j_curve_agent", "cfo_agent"
+    ],
+    "content_generation_pipeline": [
+        "content_engine", "fact_checker_agent", "persona_engine", 
+        "vaporizer_engine", "linking_engine", "price_verification_service",
+        "revenue_engine", "publish_and_archive"
+    ],
+    "outreach_and_monetization": [
+        "affiliate_funnel_manager", "email_funnel_service", 
+        "cta_optimizer", "monetization_dashboard_connector"
+    ],
+    "analytics_feedback_loop": [
+        "analytics_service", "rank_tracker_service", 
+        "performance_analyzer", "feedback_dispatcher"
+    ],
+    "media_processing": [
+        "media_optimizer_engine", "reality_media_ingest", "fallback_media_handler"
+    ],
+    "content_lifecycle_maintenance": [
+        "refresh_engine", "internal_link_optimizer", 
+        "price_update_scheduler", "decay_detector"
+    ],
+    "multi_channel_expansion": [
+        "multi_channel_expansion_engine", "adaptive_title_engine", "snippet_engine"
+    ],
+    "dashboard_and_control_tower": [
+        "dashboard_backend", "dashboard_frontend", 
+        "config_manager", "manual_override_interface"
+    ],
+    "domain_input_acquisition": [
+        "keyword_intelligence_engine", "trendpulse_engine", 
+        "competitor_intel_crawler", "reality_ingest_engine"
+    ],
+    "ops": []
+}
+
+def create_file(path, content):
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content.strip())
+    print(f"   📄 Generated: {path}")
+
+# ==============================================================================
+# 2. CORE INTELLIGENCE (INJECTED LOGIC)
+# ==============================================================================
+
+# [Source: event_bus.py] - The Nervous System
+EVENT_BUS_CODE = """
+'''Core in-process event bus implementation for DTF_EMPIRE.'''
+from collections import defaultdict
+from threading import RLock
+
+class EventBus:
+    def __init__(self):
+        self._subscribers = defaultdict(list)
+        self._lock = RLock()
+
+    def subscribe(self, event_type, handler):
+        with self._lock:
+            self._subscribers[event_type].append(handler)
+
+    def publish(self, event_type, payload=None):
+        if payload is None: payload = {}
+        with self._lock:
+            handlers = self._subscribers.get(event_type, [])
+        print(f"[EVENT BUS] {event_type} >> {payload}")
+        for handler in handlers:
+            try: handler(payload)
+            except Exception as e: print(f"Error in handler: {e}")
+
+event_bus = EventBus()
+"""
+
+# [Source: sentinent.txt / hive.txt] - The Overseer Brain
+OVERSEER_CONTROLLER = """
+'''Central controller for Overseer operations.'''
+from core_infrastructure.event_bus_interface.event_bus import event_bus
+
+class OverseerController:
+    def __init__(self):
+        self.mode = "EXPANSION"
+    
+    def initialize(self):
+        print("👁️ OVERSEER: Online and watching.")
+        event_bus.subscribe("SYSTEM.TOKEN_PRESSURE_HIGH", self.set_cooldown)
+
+    def set_cooldown(self, payload):
+        self.mode = "COOLDOWN"
+        print("👁️ OVERSEER: Switching to COOLDOWN mode.")
+
+    def approve_plan(self, plan):
+        if "forbidden" in str(plan).lower():
+            return False, "Plan contains forbidden topics."
+        return True, "APPROVED"
+"""
+
+# [Source: master implement.txt] - Agent Personas
+RESEARCHER_CODE = """
+'''DTF Researcher Agent'''
+import google.generativeai as genai
+
+PERSONA = \"\"\"
+You are the DTF Lead Researcher.
+Mission: Gather purely factual technical specs, code requirements (IRC/IBC), and product details.
+Output: Bulleted lists of facts. No fluff. No intro/outro.
+\"\"\"
+
+class ResearcherAgent:
+    def __init__(self, api_key):
+        genai.configure(api_key=api_key)
+        self.model = genai.GenerativeModel('gemini-1.5-flash', system_instruction=PERSONA)
+
+    def run(self, topic):
+        print(f"   🔍 RESEARCHER: Digging into {topic}...")
+        # Simulating research call
+        response = self.model.generate_content(f"Research this topic and provide technical specs: {topic}")
+        return response.text
+"""
+
+WRITER_CODE = """
+'''DTF Content Engineer (Writer)'''
+import google.generativeai as genai
+
+PERSONA = \"\"\"
+You are the DTF Content Engineer.
+Mission: Write authoritative 'How-To' guides.
+Voice: Gritty, professional, contractor-focused. 'Blue-collar smart.'
+Rules: Use H1/H2 headers. List Tools early. Use imperative verbs.
+\"\"\"
+
+class ContentEngineer:
+    def __init__(self, api_key):
+        genai.configure(api_key=api_key)
+        self.model = genai.GenerativeModel('gemini-1.5-flash', system_instruction=PERSONA)
+
+    def run(self, research_data):
+        print(f"   ✍️ WRITER: Drafting content based on research...")
+        response = self.model.generate_content(f"Write a comprehensive guide based on these facts: {research_data}")
+        return response.text
+"""
+
+AFFILIATE_CODE = """
+'''DTF Affiliate Scout (Revenue Ops)'''
+import google.generativeai as genai
+
+PERSONA = \"\"\"
+You are the DTF Affiliate Scout.
+Mission: Insert [AFFILIATE LINK] placeholders.
+Rules: Identify Consumables and Tools. Create a 'Jobsite Supply List' table.
+\"\"\"
+
+class AffiliateScout:
+    def __init__(self, api_key):
+        genai.configure(api_key=api_key)
+        self.model = genai.GenerativeModel('gemini-1.5-flash', system_instruction=PERSONA)
+
+    def run(self, draft_content):
+        print(f"   💰 SCOUT: Injecting monetization and tables...")
+        response = self.model.generate_content(f"Monetize this draft content: {draft_content}")
+        return response.text
+"""
+
+# [Source: ignition.txt] - The Main Execution Loop
+MAIN_PY = """
+import os
+import sys
+import json
+import time
+
+# Add root to path so modules can import each other
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from core_infrastructure.event_bus_interface.event_bus import event_bus
+from strategic_oversight.overseer_agent.overseer_controller import OverseerController
+from content_generation_pipeline.fact_checker_agent.researcher import ResearcherAgent
+from content_generation_pipeline.content_engine.writer import ContentEngineer
+from content_generation_pipeline.revenue_engine.affiliate_scout import AffiliateScout
+
+HISTORY_FILE = os.path.join("data_brick_core", "storage_layer", "applet_access_history.json")
+
+def log_history(topic, status):
+    entry = {"timestamp": time.time(), "topic": topic, "status": status}
+    try:
+        if os.path.exists(HISTORY_FILE):
+            with open(HISTORY_FILE, 'r+') as f:
+                data = json.load(f)
+                if isinstance(data, dict): 
+                    if not data: data = [] 
+                    else: data = [data]
+                data.append(entry)
+                f.seek(0)
+                json.dump(data, f, indent=4)
+        else:
+            with open(HISTORY_FILE, 'w') as f:
+                json.dump([entry], f, indent=4)
+    except Exception as e:
+        print(f"⚠️ History Log Error: {e}")
+
+def run_pipeline(api_key, topic):
+    print("="*60)
+    print("      DTF EMPIRE: ORCHESTRATOR MAX ONLINE      ")
+    print("="*60)
+    
+    # 1. Initialize System Components
+    overseer = OverseerController()
+    overseer.initialize()
+    
+    # 2. Initialize Agents (The Workforce)
+    try:
+        researcher = ResearcherAgent(api_key)
+        writer = ContentEngineer(api_key)
+        scout = AffiliateScout(api_key)
+    except Exception as e:
+        print(f"❌ Error initializing agents: {e}")
+        return
+    
+    # 3. Execute The 'Golden Path' Workflow
+    print(f"\\n🚀 STARTING JOB: {topic}")
+    event_bus.publish("JOB.STARTED", {"topic": topic})
+    
+    # Step A: Research
+    facts = researcher.run(topic)
+    
+    # Step B: Write
+    draft = writer.run(facts)
+    
+    # Step C: Monetize
+    final_asset = scout.run(draft)
+    
+    event_bus.publish("JOB.COMPLETED", {"topic": topic})
+    log_history(topic, "COMPLETED")
+    
+    print("\\n" + "="*30 + " FINAL ASSET " + "="*30)
+    print(final_asset)
+    print("="*75)
+    
+    # Save to Disk
+    filename = f"final_output_{topic.replace(' ', '_')[:20]}.md"
+    with open(filename, "w", encoding='utf-8') as f:
+        f.write(final_asset)
+    print(f"✅ Saved to {filename}")
+
+if __name__ == "__main__":
+    print("ℹ️  Setup: Ensure you have an API Key from Google AI Studio.")
+    key = input("🔑 ENTER GEMINI API KEY: ")
+    if not key:
+        print("❌ API Key required to run the neural engines.")
+        sys.exit(1)
+        
+    topic = input("📝 ENTER TOPIC (e.g., 'Best Subfloor Adhesive'): ")
+    run_pipeline(key, topic)
+"""
+
+# ==============================================================================
+# 3. BUILDER LOGIC (CONSTRUCTION)
+# ==============================================================================
+def build_empire():
+    print(f"🏗️  INITIALIZING DTF EMPIRE V80...")
+    
+    if not os.path.exists(PROJECT_ROOT):
+        os.makedirs(PROJECT_ROOT)
+
+    # A. Build Folder Tree
+    for domain, modules in STRUCTURE.items():
+        domain_path = os.path.join(PROJECT_ROOT, domain)
+        os.makedirs(domain_path, exist_ok=True)
+        create_file(os.path.join(domain_path, "__init__.py"), "")
+        print(f"📂 Domain Created: {domain}")
+        
+        for module in modules:
+            mod_path = os.path.join(domain_path, module)
+            os.makedirs(mod_path, exist_ok=True)
+            create_file(os.path.join(mod_path, "__init__.

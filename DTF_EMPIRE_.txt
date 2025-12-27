@@ -1,0 +1,82 @@
+DTF_EMPIRE/                 ← Root of the project  
+│
+├── core_infrastructure/             ← Core infra & plumbing  
+│    ├── event_bus_interface/        ← Event bus implementation & helpers  
+│    ├── retry_and_error_handler/    ← Retry/fallback logic for external calls  
+│    ├── logging_and_metrics/        ← Logging + metrics collection  
+│    └── config_and_env_manager/     ← Config/env/secrets management  
+│
+├── data_brick_core/                 ← Central data store (“knowledge brick”)  
+│    ├── brick_query_interface.py  
+│    ├── brick_update_handlers.py  
+│    ├── brick_validation_rules.py  
+│    ├── brick_relationship_graph.py  
+│    ├── brick_state_snapshot.py  
+│    └── brick_backup_rotation.py  
+│
+├── strategic_oversight/             ← Supervisors + Overseer (system brain)  
+│    ├── module_supervisor_base.py  
+│    ├── content_pipeline_supervisor.py  
+│    ├── analytics_supervisor.py  
+│    ├── monetization_supervisor.py  
+│    ├── media_supervisor.py  
+│    ├── lifecycle_supervisor.py  
+│    ├── multi_channel_supervisor.py  
+│    ├── compliance_supervisor.py  
+│    ├── overseer_supervisor_registry.py  
+│    ├── overseer_status_model.py  
+│    ├── overseer_health_aggregator.py  
+│    ├── overseer_mode_manager.py  
+│    ├── overseer_action_decider.py  
+│    └── overseer_controller.py  
+│
+├── content_generation_pipeline/     ← Main content generation engines + flow  
+│    ├── content_engine/  
+│    ├── fact_checker_agent/  
+│    ├── persona_engine/  
+│    ├── vaporizer_engine/  
+│    ├── linking_engine/  
+│    ├── price_verification_service/  
+│    ├── revenue_engine/  
+│    └── publish_and_archive/  
+│
+├── analytics_feedback_loop/         ← Analytics, tracking, feedback & signals  
+│    ├── analytics_service/  
+│    ├── rank_tracker_service/  
+│    ├── performance_analyzer/  
+│    └── feedback_dispatcher/  
+│
+├── media_processing/                ← Media ingestion, optimization & fallback  
+│    ├── media_optimizer_engine/  
+│    ├── reality_media_ingest/  
+│    └── fallback_media_handler/  
+│
+├── content_lifecycle_maintenance/   ← Refresh, decay detection, content upkeep  
+│    ├── refresh_engine/  
+│    ├── internal_link_optimizer/  
+│    ├── price_update_scheduler/  
+│    └── decay_detector/  
+│
+├── outreach_and_monetization/       ← Affiliate, CTA, email funnel, monetization logic  
+│    ├── affiliate_funnel_manager/  
+│    ├── cta_optimizer/  
+│    ├── price_verification_service/  
+│    └── email_funnel_service/  
+│
+├── multi_channel_expansion/         ← Multi-platform content expansion (TikTok, YT, IG, email, etc.)  
+│    ├── multi_channel_expansion_engine/  
+│    ├── adaptive_title_engine/  
+│    └── snippet_engine/  
+│
+├── dashboard_and_control_tower/     ← Monitoring / control UI backend + config + override tools  
+│    ├── dashboard_backend/  
+│    ├── dashboard_frontend/  
+│    ├── manual_override_interface/  
+│    └── config_manager/  
+│
+└── ops/                             ← Tools for bootstrapping, testing, running, diagnostics  
+     ├── project_bootstrap.py  
+     ├── run_overseer_loop.py  
+     ├── run_pipeline_test.py  
+     ├── mock_data_loader.py  
+     └── diagnostics_reporter.py

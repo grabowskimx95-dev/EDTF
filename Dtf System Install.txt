@@ -1,0 +1,267 @@
+import os
+import json
+import sys
+
+# ==========================================
+# 1. ARCHITECTURAL BLUEPRINT (V80)
+# ==========================================
+PROJECT_ROOT = "DTF_EMPIRE"
+
+STRUCTURE = {
+    "core_infrastructure": [
+        "event_bus_interface", "retry_and_error_handler", 
+        "logging_and_metrics", "config_and_env_manager"
+    ],
+    "data_brick_core": [
+        "data_models", "storage_layer", "brick_query_interface"
+    ],
+    "strategic_oversight": [
+        "overseer_agent", "predictive_strategy_engine", "cfo_agent"
+    ],
+    "content_generation_pipeline": [
+        "content_engine", "fact_checker_agent", "persona_engine", 
+        "vaporizer_engine", "revenue_engine", "publish_and_archive"
+    ],
+    "outreach_and_monetization": [
+        "affiliate_funnel_manager", "cta_optimizer"
+    ],
+    "analytics_feedback_loop": [
+        "analytics_service", "rank_tracker_service"
+    ],
+    "media_processing": [
+        "media_optimizer_engine", "reality_media_ingest"
+    ],
+    "content_lifecycle_maintenance": [
+        "refresh_engine", "decay_detector"
+    ],
+    "multi_channel_expansion": [
+        "adaptive_title_engine", "snippet_engine"
+    ],
+    "dashboard_and_control_tower": [
+        "config_manager"
+    ],
+    "ops": []
+}
+
+def create_file(path, content):
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content.strip())
+    print(f"   📄 Generated: {path}")
+
+# ==========================================
+# 2. CORE INTELLIGENCE (The Nervous System)
+# ==========================================
+EVENT_BUS_CODE = """
+'''Core in-process event bus implementation for DTF_EMPIRE.'''
+from collections import defaultdict
+from threading import RLock
+from typing import Any, Dict, List, Protocol
+
+class EventBus:
+    def __init__(self):
+        self._subscribers = defaultdict(list)
+        self._lock = RLock()
+
+    def subscribe(self, event_type, handler):
+        with self._lock:
+            self._subscribers[event_type].append(handler)
+
+    def publish(self, event_type, payload=None):
+        if payload is None: payload = {}
+        with self._lock:
+            handlers = self._subscribers.get(event_type, [])
+        print(f"[EVENT BUS] {event_type} >> {payload}")
+        for handler in handlers:
+            try: handler(payload)
+            except Exception as e: print(f"Error in handler: {e}")
+
+event_bus = EventBus()
+"""
+
+# ==========================================
+# 3. STRATEGIC OVERSIGHT (The Brain)
+# ==========================================
+OVERSEER_CONTROLLER = """
+'''Central controller for Overseer operations.'''
+from core_infrastructure.event_bus_interface.event_bus import event_bus
+
+class OverseerController:
+    def __init__(self):
+        self.mode = "EXPANSION"
+    
+    def initialize(self):
+        print("👁️ OVERSEER: Online and watching.")
+        event_bus.subscribe("SYSTEM.TOKEN_PRESSURE_HIGH", self.set_cooldown)
+
+    def set_cooldown(self, payload):
+        self.mode = "COOLDOWN"
+        print("👁️ OVERSEER: Switching to COOLDOWN mode.")
+
+    def approve_plan(self, plan):
+        # Logic from hive.txt
+        if "bad_topic" in str(plan):
+            return False, "Topic forbidden."
+        return True, "APPROVED"
+"""
+
+# ==========================================
+# 4. AGENT WORKFORCE (The Engines)
+# ==========================================
+# Derived from 'master implement.txt' personas
+
+RESEARCHER_CODE = """
+'''DTF Researcher Agent'''
+import google.generativeai as genai
+
+PERSONA = \"\"\"
+You are the DTF Lead Researcher.
+Mission: Gather purely factual technical specs, code requirements (IRC/IBC), and product details.
+Output: Bulleted lists of facts. No fluff. No intro/outro.
+\"\"\"
+
+class ResearcherAgent:
+    def __init__(self, api_key):
+        genai.configure(api_key=api_key)
+        self.model = genai.GenerativeModel('gemini-1.5-flash', system_instruction=PERSONA)
+
+    def run(self, topic):
+        print(f"   🔍 RESEARCHER: Digging into {topic}...")
+        response = self.model.generate_content(f"Research this topic: {topic}")
+        return response.text
+"""
+
+WRITER_CODE = """
+'''DTF Content Engineer (Writer)'''
+import google.generativeai as genai
+
+PERSONA = \"\"\"
+You are the DTF Content Engineer.
+Mission: Write authoritative 'How-To' guides.
+Voice: Gritty, professional, contractor-focused. 'Blue-collar smart.'
+Rules: Use H1/H2 headers. List Tools early. Use imperative verbs.
+\"\"\"
+
+class ContentEngineer:
+    def __init__(self, api_key):
+        genai.configure(api_key=api_key)
+        self.model = genai.GenerativeModel('gemini-1.5-flash', system_instruction=PERSONA)
+
+    def run(self, research_data):
+        print(f"   ✍️ WRITER: Drafting content...")
+        response = self.model.generate_content(f"Write a guide based on these facts: {research_data}")
+        return response.text
+"""
+
+AFFILIATE_CODE = """
+'''DTF Affiliate Scout (Revenue Ops)'''
+import google.generativeai as genai
+
+PERSONA = \"\"\"
+You are the DTF Affiliate Scout.
+Mission: Insert [AFFILIATE LINK] placeholders.
+Rules: Identify Consumables and Tools. Create a 'Jobsite Supply List' table.
+\"\"\"
+
+class AffiliateScout:
+    def __init__(self, api_key):
+        genai.configure(api_key=api_key)
+        self.model = genai.GenerativeModel('gemini-1.5-flash', system_instruction=PERSONA)
+
+    def run(self, draft_content):
+        print(f"   💰 SCOUT: Injecting monetization...")
+        response = self.model.generate_content(f"Monetize this draft: {draft_content}")
+        return response.text
+"""
+
+# ==========================================
+# 5. ENTRY POINT (The Ignition)
+# ==========================================
+MAIN_PY = """
+import os
+import sys
+
+# Add root to path
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from core_infrastructure.event_bus_interface.event_bus import event_bus
+from strategic_oversight.overseer_agent.overseer_controller import OverseerController
+from content_generation_pipeline.fact_checker_agent.researcher import ResearcherAgent
+from content_generation_pipeline.content_engine.writer import ContentEngineer
+from content_generation_pipeline.revenue_engine.affiliate_scout import AffiliateScout
+
+def run_pipeline(api_key, topic):
+    print("="*60)
+    print("      DTF EMPIRE: ORCHESTRATOR MAX ONLINE      ")
+    print("="*60)
+    
+    # 1. Init System
+    overseer = OverseerController()
+    overseer.initialize()
+    
+    # 2. Init Agents
+    researcher = ResearcherAgent(api_key)
+    writer = ContentEngineer(api_key)
+    scout = AffiliateScout(api_key)
+    
+    # 3. Execute Flow
+    print(f"\\n🚀 STARTING JOB: {topic}")
+    
+    facts = researcher.run(topic)
+    draft = writer.run(facts)
+    final_asset = scout.run(draft)
+    
+    print("\\n" + "="*30 + " FINAL ASSET " + "="*30)
+    print(final_asset[:500] + "... (truncated)")
+    print("="*75)
+    
+    # Save to Disk
+    with open("final_output.md", "w") as f:
+        f.write(final_asset)
+    print("✅ Saved to final_output.md")
+
+if __name__ == "__main__":
+    key = input("🔑 ENTER GEMINI API KEY: ")
+    topic = input("📝 ENTER TOPIC (e.g., 'Best Subfloor Adhesive'): ")
+    run_pipeline(key, topic)
+"""
+
+# ==========================================
+# 6. BUILD EXECUTION
+# ==========================================
+def build_empire():
+    print(f"🏗️  INITIALIZING DTF EMPIRE V80...")
+    
+    if not os.path.exists(PROJECT_ROOT):
+        os.makedirs(PROJECT_ROOT)
+
+    # A. Build Folder Tree
+    for domain, modules in STRUCTURE.items():
+        domain_path = os.path.join(PROJECT_ROOT, domain)
+        os.makedirs(domain_path, exist_ok=True)
+        create_file(os.path.join(domain_path, "__init__.py"), "")
+        
+        for module in modules:
+            mod_path = os.path.join(domain_path, module)
+            os.makedirs(mod_path, exist_ok=True)
+            create_file(os.path.join(mod_path, "__init__.py"), "")
+
+    # B. Inject Core Code
+    # Event Bus
+    create_file(os.path.join(PROJECT_ROOT, "core_infrastructure/event_bus_interface/event_bus.py"), EVENT_BUS_CODE)
+    
+    # Overseer
+    create_file(os.path.join(PROJECT_ROOT, "strategic_oversight/overseer_agent/overseer_controller.py"), OVERSEER_CONTROLLER)
+    
+    # Agents (The Pipeline)
+    create_file(os.path.join(PROJECT_ROOT, "content_generation_pipeline/fact_checker_agent/researcher.py"), RESEARCHER_CODE)
+    create_file(os.path.join(PROJECT_ROOT, "content_generation_pipeline/content_engine/writer.py"), WRITER_CODE)
+    create_file(os.path.join(PROJECT_ROOT, "content_generation_pipeline/revenue_engine/affiliate_scout.py"), AFFILIATE_CODE)
+
+    # Main Entry
+    create_file(os.path.join(PROJECT_ROOT, "main.py"), MAIN_PY)
+
+    print("\n✅ DTF EMPIRE BUILT SUCCESSFULLY.")
+    print(f"👉 To Launch:  cd {PROJECT_ROOT} && python main.py")
+
+if __name__ == "__main__":
+    build_empire()

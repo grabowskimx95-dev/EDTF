@@ -1,0 +1,67 @@
+"""Supervisor for monetization, CTA performance, and affiliate health."""
+
+from __future__ import annotations
+
+from typing import Any, Dict
+
+from .module_supervisor_base import ModuleSupervisor
+from core_infrastructure.event_bus_interface.event_bus import event_bus
+
+
+class MonetizationSupervisor(ModuleSupervisor):
+    """Tracks monetization health, including CTAs and affiliate links."""
+
+    def __init__(self) -> None:
+        super().__init__(name="monetization")
+        self.state.update(
+            {
+                "offers_tracked": 0,
+                "avg_cta_ctr": 0.0,
+                "avg_revenue_per_click": 0.0,
+                "link_failures": 0,
+            }
+        )
+
+    def initialize(self) -> None:
+        event_bus.subscribe("MONETIZATION.METRICS_UPDATED", self._on_metrics_updated)
+        event_bus.subscribe("AFFILIATE.LINK_FAILED", self._on_link_failed)
+        self.mark_initialized()
+
+    def _on_metrics_updated(self, payload: Dict[str, Any]) -> None:
+        self.state["offers_tracked"] = int(payload.get("offers_tracked", 0))
+        self.state["avg_cta_ctr"] = float(payload.get("avg_cta_ctr", 0.0))
+        self.state["avg_revenue_per_click"] = float(
+            payload.get("avg_revenue_per_click", 0.0)
+        )
+
+    def _on_link_failed(self, payload: Dict[str, Any]) -> None:
+        self.state["link_failures"] += 1
+
+    def handle_event(self, event_type: str, payload: Dict[str, Any]) -> None:
+        return
+
+    def get_health_snapshot(self) -> Dict[str, Any]:
+        offers = int(self.state["offers_tracked"])
+        link_failures = int(self.state["link_failures"])
+        avg_cta_ctr = float(self.state["avg_cta_ctr"])
+        avg_rpc = float(self.state["avg_revenue_per_click"])
+
+        if link_failures > 10:
+            status = "critical"
+            summary = "High number of affiliate/CTA link failures detected."
+        elif offers == 0:
+            status = "warning"
+            summary = "No offers tracked; monetization may not be active."
+        else:
+            status = "ok"
+            summary = "Monetization metrics within expected range."
+
+        return {
+            "name": self.name,
+            "status": status,
+            "summary": summary,
+            "offers_tracked": offers,
+            "avg_cta_ctr": avg_cta_ctr,
+            "avg_revenue_per_click": avg_rpc,
+            "link_failures": link_failures,
+        }

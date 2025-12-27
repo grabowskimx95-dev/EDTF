@@ -1,0 +1,88 @@
+import os
+import sys
+import time
+import json
+import google.generativeai as genai
+
+# ==========================================
+# CONFIGURATION
+# ==========================================
+PROJECT_ROOT = "DTF_EMPIRE"
+sys.path.append(os.path.abspath(PROJECT_ROOT))
+
+# Import Infrastructure
+from core_infrastructure.event_bus_interface.event_bus import event_bus
+from main_v2 import UniversalAgent, run_advanced_pipeline # Reuse the V2 Pipeline
+
+# ==========================================
+# AUTONOMY ENGINE
+# ==========================================
+def run_autonomy_loop(api_key):
+    print("="*60)
+    print("      DTF EMPIRE: AUTONOMY MODE ACTIVE      ")
+    print("      Protocol: Sentinel -> Orchestrator -> Production")
+    print("="*60)
+
+    # 1. SYSTEM HEALTH CHECK
+    health_agent = UniversalAgent("Empire_Health_Monitoring_Agent", api_key)
+    health_status = health_agent.run("Check system status for Cycle start.")
+    print(f"\n🏥 HEALTH CHECK:\n{health_status}\n")
+
+    if "CRITICAL" in health_status.upper():
+        print("❌ System Health Critical. Aborting Autonomy.")
+        return
+
+    # 2. SENTINEL SCAN (Input Acquisition)
+    print("🔭 SENTINEL: Scanning for High-Velocity Trends...")
+    sentinel = UniversalAgent("Market_Trend_Sentinel", api_key)
+    
+    # In a real system, this would hit Google Trends API. 
+    # Here, the Sentinel uses its LLM knowledge to predict valid trends.
+    trend_data = sentinel.run("Identify 3 breakout construction tool trends for this month. Output strictly a JSON list of strings, e.g. ['Topic A', 'Topic B'].")
+    
+    # Clean and parse the Sentinel's output
+    try:
+        # Simple cleaner to extract JSON array
+        start = trend_data.find('[')
+        end = trend_data.find(']') + 1
+        topics = json.loads(trend_data[start:end])
+        print(f"🎯 TARGETS ACQUIRED: {topics}")
+    except:
+        print(f"⚠️ Sentinel Output Error. Defaulting to fallback topics.")
+        topics = ["Best Heated Jobsite Jackets 2025", "Cordless Table Saw Comparison"]
+
+    # 3. PRODUCTION LOOP
+    for i, topic in enumerate(topics):
+        print(f"\n🔄 AUTONOMY CYCLE {i+1}/{len(topics)}: Executing '{topic}'")
+        
+        # Trigger the Main V2 Pipeline
+        try:
+            run_advanced_pipeline(api_key, topic)
+            print(f"✅ CYCLE {i+1} COMPLETE.")
+        except Exception as e:
+            print(f"❌ CYCLE FAILED: {e}")
+        
+        # Cooldown to respect rate limits
+        print("⏳ Cooldown: 5 seconds...")
+        time.sleep(5)
+
+    # 4. OPTIMIZATION REVIEW
+    print("\n📉 PIPELINE OPTIMIZER: Analyzing Batch Performance...")
+    optimizer = UniversalAgent("Pipeline_Optimization_Agent", api_key)
+    report = optimizer.run(f"Review the execution of these topics: {topics}. Was the flow efficient?")
+    print(f"\n{report}")
+
+    print("\n" + "="*60)
+    print("      AUTONOMY CYCLE COMPLETE      ")
+    print("="*60)
+
+if __name__ == "__main__":
+    # Check Registry
+    reg_path = os.path.join(PROJECT_ROOT, "data_brick_core", "data_models", "agent_registry.py")
+    if not os.path.exists(reg_path):
+        print("❌ Registry missing. Run recruitment scripts first.")
+        sys.exit(1)
+
+    key = input("🔑 ENTER GEMINI API KEY: ").strip()
+    if key:
+        run_autonomy_loop(key)

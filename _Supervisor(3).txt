@@ -1,0 +1,66 @@
+"""Supervisor for media processing and optimization health."""
+
+from __future__ import annotations
+
+from typing import Any, Dict
+
+from .module_supervisor_base import ModuleSupervisor
+from core_infrastructure.event_bus_interface.event_bus import event_bus
+
+
+class MediaSupervisor(ModuleSupervisor):
+    """Monitors media optimization performance and failures."""
+
+    def __init__(self) -> None:
+        super().__init__(name="media")
+        self.state.update(
+            {
+                "assets_processed": 0,
+                "assets_failed": 0,
+                "avg_image_size_kb": 0.0,
+            }
+        )
+
+    def initialize(self) -> None:
+        event_bus.subscribe("MEDIA.OPTIMIZED", self._on_media_optimized)
+        event_bus.subscribe("MEDIA.FAILED", self._on_media_failed)
+        self.mark_initialized()
+
+    def _on_media_optimized(self, payload: Dict[str, Any]) -> None:
+        self.state["assets_processed"] += 1
+        size_kb = float(payload.get("size_kb", 0.0))
+        prev = float(self.state["avg_image_size_kb"])
+        total = self.state["assets_processed"]
+        self.state["avg_image_size_kb"] = ((prev * (total - 1)) + size_kb) / max(
+            total, 1
+        )
+
+    def _on_media_failed(self, payload: Dict[str, Any]) -> None:
+        self.state["assets_failed"] += 1
+
+    def handle_event(self, event_type: str, payload: Dict[str, Any]) -> None:
+        return
+
+    def get_health_snapshot(self) -> Dict[str, Any]:
+        processed = int(self.state["assets_processed"])
+        failed = int(self.state["assets_failed"])
+        avg_size = float(self.state["avg_image_size_kb"])
+
+        if processed == 0 and failed == 0:
+            status = "idle"
+            summary = "No media processed yet."
+        elif failed > 0 and failed / max(processed + failed, 1) > 0.2:
+            status = "warning"
+            summary = "Significant proportion of media jobs are failing."
+        else:
+            status = "ok"
+            summary = "Media processing appears healthy."
+
+        return {
+            "name": self.name,
+            "status": status,
+            "summary": summary,
+            "assets_processed": processed,
+            "assets_failed": failed,
+            "avg_image_size_kb": avg_size,
+        }

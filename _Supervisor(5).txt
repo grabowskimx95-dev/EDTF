@@ -1,0 +1,78 @@
+"""Supervisor for the analytics and feedback domain."""
+
+from __future__ import annotations
+
+from typing import Any, Dict
+
+from .module_supervisor_base import ModuleSupervisor
+from core_infrastructure.event_bus_interface.event_bus import event_bus
+
+
+class AnalyticsSupervisor(ModuleSupervisor):
+    """Monitors analytics freshness and basic performance trends."""
+
+    def __init__(self) -> None:
+        super().__init__(name="analytics")
+        self.state.update(
+            {
+                "last_update_ts": None,  # e.g. ISO timestamp string
+                "pages_tracked": 0,
+                "avg_ctr": 0.0,
+                "avg_conversion_rate": 0.0,
+                "stale": True,
+            }
+        )
+
+    def initialize(self) -> None:
+        """Subscribe to analytics-related events."""
+        event_bus.subscribe("ANALYTICS.UPDATED", self._on_analytics_updated)
+        event_bus.subscribe("RANKING.UPDATED", self._on_ranking_updated)
+        self.mark_initialized()
+
+    def _on_analytics_updated(self, payload: Dict[str, Any]) -> None:
+        """Handle raw analytics update events."""
+        self.state["last_update_ts"] = payload.get("timestamp")
+        self.state["pages_tracked"] = int(payload.get("pages_tracked", 0))
+        self.state["avg_ctr"] = float(payload.get("avg_ctr", 0.0))
+        self.state["avg_conversion_rate"] = float(
+            payload.get("avg_conversion_rate", 0.0)
+        )
+        self.state["stale"] = False
+
+    def _on_ranking_updated(self, payload: Dict[str, Any]) -> None:
+        """Handle ranking changes (could be expanded later)."""
+        # Currently we don't store per-keyword rank here, just acknowledge updates.
+        self.state["last_ranking_update_ts"] = payload.get("timestamp")
+
+    def handle_event(self, event_type: str, payload: Dict[str, Any]) -> None:
+        """Additional event handling entrypoint if needed."""
+        # For now, direct subscriptions handle their own payloads.
+        return
+
+    def get_health_snapshot(self) -> Dict[str, Any]:
+        pages_tracked = int(self.state["pages_tracked"])
+        avg_ctr = float(self.state["avg_ctr"])
+        avg_conv = float(self.state["avg_conversion_rate"])
+        stale = bool(self.state.get("stale", True))
+        last_update = self.state.get("last_update_ts")
+
+        if stale or last_update is None:
+            status = "warning"
+            summary = "Analytics appear stale or have never been updated."
+        elif pages_tracked == 0:
+            status = "warning"
+            summary = "Analytics are fresh, but no pages are being tracked."
+        else:
+            status = "ok"
+            summary = "Analytics are updating and tracking appears healthy."
+
+        return {
+            "name": self.name,
+            "status": status,
+            "summary": summary,
+            "pages_tracked": pages_tracked,
+            "avg_ctr": avg_ctr,
+            "avg_conversion_rate": avg_conv,
+            "last_update_ts": last_update,
+            "stale": stale,
+        }

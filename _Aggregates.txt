@@ -1,0 +1,35 @@
+"""Aggregates supervisor health snapshots into a global view."""
+
+from __future__ import annotations
+
+from typing import List
+
+from .overseer_status_model import OverseerStatus, SupervisorHealth
+from .overseer_supervisor_registry import supervisor_registry
+
+
+class OverseerHealthAggregator:
+    """Collects health data from all supervisors for Overseer."""
+
+    def collect(self, mode: str) -> OverseerStatus:
+        supers = supervisor_registry.all_supervisors()
+        health_list: List[SupervisorHealth] = []
+
+        for sup in supers:
+            snapshot = sup.get_health_snapshot()
+            metrics = {
+                k: v
+                for k, v in snapshot.items()
+                if k not in ("name", "status", "summary")
+                and isinstance(v, (int, float))
+            }
+            health_list.append(
+                SupervisorHealth(
+                    name=snapshot.get("name", sup.name),
+                    status=snapshot.get("status", "unknown"),
+                    summary=snapshot.get("summary", ""),
+                    metrics=metrics,
+                )
+            )
+
+        return OverseerStatus(mode=mode, supervisors=health_list)

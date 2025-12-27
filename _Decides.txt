@@ -1,0 +1,55 @@
+"""Decides high-level actions based on Overseer status and health."""
+
+from __future__ import annotations
+
+from typing import Dict, List
+
+from .overseer_status_model import OverseerStatus, SupervisorHealth
+
+
+class OverseerActionDecider:
+    """Determines what the system should do next.
+
+    In V77 this will be mostly rule-based; future versions can
+    add LLM assistance for more nuanced decisions.
+    """
+
+    def decide_next_actions(self, status: OverseerStatus) -> List[Dict]:
+        """Return a list of high-level actions.
+
+        Example actions:
+        - {"type": "SCHEDULE_NEW_CONTENT_BATCH"}
+        - {"type": "PRIORITIZE_REFRESH", "reason": "..."}
+        """
+        actions: List[Dict] = []
+
+        # Simple example rules:
+        if status.mode == "COOLDOWN":
+            actions.append(
+                {
+                    "type": "LIMIT_HEAVY_JOBS",
+                    "reason": "System in COOLDOWN; limiting expensive operations.",
+                }
+            )
+            return actions
+
+        # Look for critical supervisors:
+        critical_supers: List[SupervisorHealth] = [
+            s for s in status.supervisors if s.status == "critical"
+        ]
+        if critical_supers:
+            actions.append(
+                {
+                    "type": "INVESTIGATE_CRITICAL_SUPERVISORS",
+                    "details": [s.name for s in critical_supers],
+                }
+            )
+
+        if status.mode == "EXPANSION":
+            actions.append({"type": "SCHEDULE_NEW_CONTENT_BATCH"})
+        elif status.mode == "OPTIMIZATION":
+            actions.append({"type": "PRIORITIZE_REFRESH"})
+        elif status.mode == "REMIX":
+            actions.append({"type": "SCHEDULE_REMIX_JOBS"})
+
+        return actions

@@ -1,0 +1,61 @@
+"""Supervisor for governance, duplication, and IP risk checks."""
+
+from __future__ import annotations
+
+from typing import Any, Dict
+
+from .module_supervisor_base import ModuleSupervisor
+from core_infrastructure.event_bus_interface.event_bus import event_bus
+
+
+class ComplianceSupervisor(ModuleSupervisor):
+    """Tracks content duplication risk, IP concerns, and spam-like behavior."""
+
+    def __init__(self) -> None:
+        super().__init__(name="compliance")
+        self.state.update(
+            {
+                "duplication_flags": 0,
+                "ip_risk_flags": 0,
+                "link_spam_flags": 0,
+            }
+        )
+
+    def initialize(self) -> None:
+        event_bus.subscribe("COMPLIANCE.DUPLICATION_FLAG", self._on_duplication_flag)
+        event_bus.subscribe("COMPLIANCE.IP_RISK_FLAG", self._on_ip_risk_flag)
+        event_bus.subscribe("COMPLIANCE.LINK_SPAM_FLAG", self._on_link_spam_flag)
+        self.mark_initialized()
+
+    def _on_duplication_flag(self, payload: Dict[str, Any]) -> None:
+        self.state["duplication_flags"] += 1
+
+    def _on_ip_risk_flag(self, payload: Dict[str, Any]) -> None:
+        self.state["ip_risk_flags"] += 1
+
+    def _on_link_spam_flag(self, payload: Dict[str, Any]) -> None:
+        self.state["link_spam_flags"] += 1
+
+    def handle_event(self, event_type: str, payload: Dict[str, Any]) -> None:
+        return
+
+    def get_health_snapshot(self) -> Dict[str, Any]:
+        dup = int(self.state["duplication_flags"])
+        ip = int(self.state["ip_risk_flags"])
+        spam = int(self.state["link_spam_flags"])
+
+        if dup + ip + spam == 0:
+            status = "ok"
+            summary = "No compliance issues detected."
+        else:
+            status = "warning"
+            summary = "Some compliance flags have been raised."
+
+        return {
+            "name": self.name,
+            "status": status,
+            "summary": summary,
+            "duplication_flags": dup,
+            "ip_risk_flags": ip,
+            "link_spam_flags": spam,
+        }

@@ -1,0 +1,216 @@
+import google.generativeai as genai
+import json
+import os
+import time
+import re
+
+# ==========================================
+# 1. CONFIGURATION SECTION
+# ==========================================
+
+# REPLACE THIS with your actual API Key from aistudio.google.com
+API_KEY = "YOUR_GEMINI_API_KEY_HERE"
+
+# Configure the AI Model
+genai.configure(api_key=API_KEY)
+MODEL_NAME = 'gemini-1.5-flash'
+
+# File Paths (Change these if using Google Drive)
+# If using Google Colab with Drive, use: "/content/drive/My Drive/DTF_Data/"
+BASE_PATH = "./dtf_system_data/" 
+REGISTRY_FILE = os.path.join(BASE_PATH, "dtf_registry.json")
+HISTORY_FILE = os.path.join(BASE_PATH, "dtf_learning_log.json")
+
+# Create Directory if it doesn't exist
+if not os.path.exists(BASE_PATH):
+    os.makedirs(BASE_PATH)
+    print(f"📂 System Directory Created at: {BASE_PATH}")
+
+# ==========================================
+# 2. FILE MANAGEMENT (MEMORY SYSTEM)
+# ==========================================
+
+def load_json(filename, default_data):
+    """Loads JSON data or creates the file with defaults if missing."""
+    if not os.path.exists(filename):
+        save_json(filename, default_data)
+        return default_data
+    try:
+        with open(filename, "r") as f:
+            return json.load(f)
+    except json.JSONDecodeError:
+        print(f"⚠️ Warning: {filename} was corrupted. Resetting to defaults.")
+        save_json(filename, default_data)
+        return default_data
+
+def save_json(filename, data):
+    """Saves data to JSON file."""
+    with open(filename, "w") as f:
+        json.dump(data, f, indent=4)
+
+# ==========================================
+# 3. THE EXECUTIVE AGENTS (THE BRAIN)
+# ==========================================
+
+def dtf_architect(user_goal, current_roster, feedback=""):
+    """
+    THE ARCHITECT: Designs the workflow based on the goal and available agents.
+    """
+    roster_list = ", ".join(current_roster.keys())
+    
+    prompt = f"""
+    GOAL: {user_goal}
+    AVAILABLE AGENTS: {roster_list}
+    PREVIOUS FEEDBACK: {feedback}
+    
+    TASK: Design a sequential workflow to achieve the goal.
+    - Use existing agents where possible.
+    - If a specialist is needed that doesn't exist, invent a name (e.g., 'TikTok_Expert').
+    - Output strictly valid JSON.
+    
+    FORMAT:
+    [
+        {{"step": 1, "agent": "AgentName", "instruction": "Specific task instruction"}},
+        {{"step": 2, "agent": "AgentName", "instruction": "Specific task instruction"}}
+    ]
+    """
+    
+    model = genai.GenerativeModel(MODEL_NAME, generation_config={"response_mime_type": "application/json"})
+    try:
+        response = model.generate_content(prompt)
+        return json.loads(response.text)
+    except Exception as e:
+        print(f"❌ Architect Error: {e}")
+        return []
+
+def dtf_recruiter(agent_name):
+    """
+    THE RECRUITER: Creates the persona for a new agent.
+    """
+    print(f"   ✨ RECRUITING: Building new agent '{agent_name}'...")
+    
+    prompt = f"""
+    TASK: Write a System Instruction (Persona) for a new AI Agent named '{agent_name}'.
+    CONTEXT: This agent works for 'Design To Finish Contracting' (Construction/DIY Brand).
+    TONE: Professional, Authoritative, Experienced, Profitable.
+    OUTPUT: Only the instruction text.
+    """
+    model = genai.GenerativeModel(MODEL_NAME)
+    return model.generate_content(prompt).text.strip()
+
+def dtf_overseer_critique(plan, user_goal):
+    """
+    THE OVERSEER: Reviews the plan before execution.
+    """
+    prompt = f"""
+    GOAL: {user_goal}
+    PLAN: {json.dumps(plan)}
+    
+    ROLE: Project Manager.
+    TASK: Critique this plan. Is it logical?
+    OUTPUT: 'APPROVED' if good. If bad, start with 'REJECTED:' followed by reason.
+    """
+    model = genai.GenerativeModel(MODEL_NAME)
+    response = model.generate_content(prompt)
+    
+    if "APPROVED" in response.text:
+        return True, ""
+    else:
+        return False, response.text
+
+# ==========================================
+# 4. MAIN SYSTEM LOOP
+# ==========================================
+
+def run_hive(user_goal):
+    print(f"\n🚀 SYSTEM ACTIVATED: Processing '{user_goal}'")
+    
+    # Load Memory
+    registry = load_json(REGISTRY_FILE, {
+        "Researcher": "You are a Researcher. Gather factual specs and code requirements.",
+        "Writer": "You are a Writer. Write authoritative construction content.",
+        "Monetizer": "You are a Sales Expert. Insert affiliate link placeholders."
+    })
+    
+    # --- PHASE 1: PLANNING ---
+    print("   🧠 ARCHITECT: Designing workflow...")
+    plan_attempts = 0
+    valid_plan = []
+    feedback = ""
+    
+    while plan_attempts < 3:
+        plan = dtf_architect(user_goal, registry, feedback)
+        is_good, critique = dtf_overseer_critique(plan, user_goal)
+        
+        if is_good:
+            valid_plan = plan
+            print("   ✅ OVERSEER: Plan Approved.")
+            break
+        
+        print(f"   ⚠️ OVERSEER: Plan Rejected. Correction: {critique}")
+        feedback = critique
+        plan_attempts += 1
+        
+    if not valid_plan:
+        return "❌ CRITICAL FAILURE: Unable to design a valid plan."
+
+    # --- PHASE 2: EXECUTION ---
+    context_data = ""
+    
+    for step in valid_plan:
+        agent_name = step['agent']
+        task = step['instruction']
+        
+        # Self-Growth: Check if agent exists
+        if agent_name not in registry:
+            # Create and Save new Agent
+            registry[agent_name] = dtf_recruiter(agent_name)
+            save_json(REGISTRY_FILE, registry)
+            print(f"   💾 NEW AGENT SAVED: {agent_name}")
+            
+        print(f"   ⚙️  EXECUTING: [{agent_name}] is working...")
+        
+        # Run the Agent
+        worker = genai.GenerativeModel(
+            MODEL_NAME, 
+            system_instruction=registry[agent_name]
+        )
+        
+        full_prompt = f"PREVIOUS OUTPUT: {context_data}\n\nCURRENT TASK: {task}"
+        response = worker.generate_content(full_prompt)
+        context_data = response.text
+
+    # --- PHASE 3: LEARNING ---
+    # Log the session
+    history = load_json(HISTORY_FILE, [])
+    history.append({
+        "timestamp": time.time(),
+        "goal": user_goal,
+        "plan": valid_plan
+    })
+    save_json(HISTORY_FILE, history)
+    
+    return context_data
+
+# ==========================================
+# 5. USER INTERFACE
+# ==========================================
+
+if __name__ == "__main__":
+    print("="*60)
+    print("      DTF SENTIENT HIVE SYSTEM      ")
+    print("="*60)
+    print("System is ready. Type 'exit' to quit.\n")
+    
+    while True:
+        user_input = input("\n📝 ENTER COMMAND: ")
+        if user_input.lower() in ['exit', 'quit']:
+            break
+            
+        try:
+            result = run_hive(user_input)
+            print("\n" + "="*30 + " FINAL OUTPUT " + "="*30)
+            print(result)
+            print("="*74)
+        except Exception as e:
+            print(f"❌ ERROR: {e}")

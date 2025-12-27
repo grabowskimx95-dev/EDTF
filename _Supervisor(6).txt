@@ -1,0 +1,94 @@
+"""Supervisor for the content generation pipeline domain."""
+
+from __future__ import annotations
+
+from typing import Any, Dict
+
+from .module_supervisor_base import ModuleSupervisor
+from core_infrastructure.event_bus_interface.event_bus import event_bus
+
+
+class ContentPipelineSupervisor(ModuleSupervisor):
+    """Oversees content pipeline jobs, failures, and latency."""
+
+    def __init__(self) -> None:
+        super().__init__(name="content_pipeline")
+        self.state.update(
+            {
+                "jobs_total": 0,
+                "jobs_failed": 0,
+                "avg_latency_sec": 0.0,
+                "last_error": None,
+            }
+        )
+
+    def initialize(self) -> None:
+        """Subscribe to content pipeline events."""
+        event_bus.subscribe("CONTENT.JOB_COMPLETED", self._on_job_completed)
+        event_bus.subscribe("CONTENT.JOB_FAILED", self._on_job_failed)
+        self.mark_initialized()
+
+    # These handlers are called directly by the event bus:
+    def _on_job_completed(self, payload: Dict[str, Any]) -> None:
+        self.state["jobs_total"] += 1
+        latency = float(payload.get("latency_sec", 0.0))
+
+        # Simple rolling average
+        jobs_total = self.state["jobs_total"]
+        prev_avg = float(self.state["avg_latency_sec"])
+        new_avg = ((prev_avg * (jobs_total - 1)) + latency) / max(jobs_total, 1)
+        self.state["avg_latency_sec"] = new_avg
+
+    def _on_job_failed(self, payload: Dict[str, Any]) -> None:
+        self.state["jobs_total"] += 1
+        self.state["jobs_failed"] += 1
+        self.state["last_error"] = payload.get("error_message", "unknown")
+
+        # Emit a higher-level alert. In later versions, this could be smarter.
+        event_bus.publish(
+            "CONTENT.SUPERVISOR_ALERT",
+            {
+                "source": self.name,
+                "jobs_failed": self.state["jobs_failed"],
+                "last_error": self.state["last_error"],
+            },
+        )
+
+    # Base interface implementations:
+    def handle_event(self, event_type: str, payload: Dict[str, Any]) -> None:
+        """Optional extra event routing layer (not used heavily yet)."""
+        # For now, direct event_bus subscriptions call internal handlers.
+        # This method exists for future expansion (e.g. wildcard routing).
+        return
+
+    def get_health_snapshot(self) -> Dict[str, Any]:
+        jobs_total = int(self.state["jobs_total"])
+        jobs_failed = int(self.state["jobs_failed"])
+        avg_latency = float(self.state["avg_latency_sec"])
+        last_error = self.state["last_error"]
+
+        failure_rate = (jobs_failed / jobs_total) if jobs_total > 0 else 0.0
+
+        if jobs_total == 0:
+            status = "idle"
+            summary = "No content jobs processed yet."
+        elif failure_rate > 0.3:
+            status = "critical"
+            summary = f"High failure rate ({failure_rate:.0%}) in content pipeline."
+        elif failure_rate > 0.1:
+            status = "warning"
+            summary = f"Elevated failure rate ({failure_rate:.0%}) in content pipeline."
+        else:
+            status = "ok"
+            summary = "Content pipeline operating within acceptable bounds."
+
+        return {
+            "name": self.name,
+            "status": status,
+            "summary": summary,
+            "jobs_total": jobs_total,
+            "jobs_failed": jobs_failed,
+            "failure_rate": failure_rate,
+            "avg_latency_sec": avg_latency,
+            "last_error": last_error,
+        }

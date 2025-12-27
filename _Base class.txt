@@ -1,0 +1,67 @@
+"""Base class for all module supervisors in DTF_EMPIRE.
+
+A ModuleSupervisor is responsible for:
+- Tracking health and basic metrics for its domain
+- Reacting to relevant events (via the event bus)
+- Providing a health snapshot for the Overseer
+"""
+
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from typing import Any, Dict
+
+
+class ModuleSupervisor(ABC):
+    """Abstract base class for all domain/module supervisors."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        # Arbitrary state bag; each supervisor can define its own keys.
+        self.state: Dict[str, Any] = {}
+        self._initialized: bool = False
+
+    @abstractmethod
+    def initialize(self) -> None:
+        """Perform any subscriptions or wiring to the event bus.
+
+        Called once after the supervisor is created and registered.
+        """
+        ...
+
+    @abstractmethod
+    def handle_event(self, event_type: str, payload: Dict[str, Any]) -> None:
+        """Handle a domain-relevant event from the event bus.
+
+        Supervisors will typically subscribe to specific event types and route
+        to internal handlers, updating their state as needed.
+        """
+        ...
+
+    @abstractmethod
+    def get_health_snapshot(self) -> Dict[str, Any]:
+        """Return a structured view of this supervisor's current health.
+
+        Must at least include:
+        - 'name': str
+        - 'status': str (e.g., 'ok', 'warning', 'critical')
+        - 'summary': str (human-readable)
+        - Any relevant metrics (failure_rate, latency, etc.)
+        """
+        ...
+
+    def mark_initialized(self) -> None:
+        """Mark the supervisor as initialized."""
+        self._initialized = True
+
+    @property
+    def initialized(self) -> bool:
+        return self._initialized
+
+    def record_metric(self, key: str, value: Any) -> None:
+        """Store a simple metric in the supervisor's state."""
+        self.state[key] = value
+
+    def get_metric(self, key: str, default: Any = None) -> Any:
+        """Get a stored metric, if present."""
+        return self.state.get(key, default)

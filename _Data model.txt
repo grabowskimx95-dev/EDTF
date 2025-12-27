@@ -1,0 +1,34 @@
+"""Data model for representing Overseer and system status."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Dict, List
+
+
+@dataclass
+class SupervisorHealth:
+    name: str
+    status: str
+    summary: str
+    metrics: Dict[str, float] = field(default_factory=dict)
+
+
+@dataclass
+class OverseerStatus:
+    mode: str
+    supervisors: List[SupervisorHealth] = field(default_factory=list)
+
+    def to_dict(self) -> Dict:
+        return {
+            "mode": self.mode,
+            "supervisors": [
+                {
+                    "name": s.name,
+                    "status": s.status,
+                    "summary": s.summary,
+                    "metrics": s.metrics,
+                }
+                for s in self.supervisors
+            ],
+        }

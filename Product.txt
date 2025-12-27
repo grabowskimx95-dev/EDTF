@@ -1,0 +1,10 @@
+Product
+AffiliateOffer
+TrendSignal
+ContentPacket
+BatchSpec
+LedgerEntry
+Asset (html, mp4, images)
+VideoShotList
+PostStatus
+JobRun

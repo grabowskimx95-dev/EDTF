@@ -1,0 +1,77 @@
+# DTF_EMPIRE_DEV_FLOW_SPEC
+
+## 00 — Overview
+- This document describes the precise flow of data, services, jobs, and code modules in the DTF Empire V76 system.
+- The system is structured in Python, using domain models + engines + agents + services + scheduled jobs + external integrations (WP, Drive, Analytics, Affiliate networks, APIs).
+- Every step references modules by relative path under src/.
+
+## 01 — Input / Signal & Ingestion Layer
+- External signals:
+    src/services/trend_service.py       → pulls data (Google Trends / SERP snapshots / competitor scraping) → returns raw JSON
+    src/services/serp_service.py        → pulls SERP / competitor data when triggered
+    src/services/price_service.py*      → (future) monitors price feeds / deal feeds
+- Product feed ingestion:
+    External FTP / CSV feed → parsed by internal script (or ingestion job) → mapped to domain model src/domain/product.py
+- Outcome: domain objects created → TrendSignal(s) + Product(s) to enter processing queue
+
+## 02 — Strategy & Opportunity Layer
+- src/engines/trendpulse_engine.py → consumes TrendSignal & competitor data → normalizes, scores topics/tools by trend, volatility, demand
+- src/engines/strategy_engine.py → consumes:
+    - trending signals (above)
+    - existing Product list
+    - historical performance data (from analytics or ledger)
+  → outputs prioritized work queue: list of ContentPacket specs (domain: src/domain/content_packet.py)
+- Queue saved to DB via src/services/supabase_service.py (table content_packets), ready for scheduling  
+
+## 03 — Financial & Governance Check Layer
+- For each queued ContentPacket → before launching:
+    - src/agents/cfo_agent.py → checks global / per-job budget (token/compute cost, external API calls)
+    - src/agents/j_curve_agent.py → optional: forecast ROI using past LedgerEntry stats (src/domain/ledger_entry.py) + analytics conversion/earnings data → calculates break-even & 30–90d ROI
+- If approved → mark for generation; otherwise → hold or deprioritize  
+
+## 04 — Content Generation Pipeline
+- src/engines/content_engine.py → given ContentPacket spec → build BatchSpec (src/domain/batch_spec.py) for AI job  
+- Submit via src/services/openai_service.py → send to LLM / Gemini / AI backend  
+- On retrieval (via src/main_retriever.py):
+    - raw draft received → pass through:
+        - src/agents/fact_checker_agent.py (validate claims, avoid hallucinations)  
+        - src/agents/persona_agent.py (apply DTF voice rules)  
+        - src/engines/vaporizer_engine.py (optimization, link-density, readability)  
+    - Visuals & assets plan:
+        - src/engines/visual_engine.py → decide needed images / spec-tables / infographics  
+        - call image/chart generator service (future) → produce asset files  
+    - Internal linking:
+        - src/engines/link_graph_engine.py → generate internal link map based on existing content graph  
+- Output: final content + assets + metadata  
+
+## 05 — Monetization & Offer Injection
+- src/services/affiliate_service.py → fetch available affiliate offers per Product or tool  
+- src/engines/affiliate_engine.py + src/engines/revenue_engine.py → choose best offers, apply revenue logic, decide placement (intro, inline, CTA, upsell, SaaS card)  
+- Optionally plan SaaS ad block insertion (if applicable)  
+
+## 06 — Publishing & Archival
+- Publish via src/services/wordpress_service.py → upload post + assets + meta (schema, internal links)  
+- Archive via src/services/drive_service.py → store HTML, JSON spec, asset metadata in Data Brick / Drive (for backup and audit)  
+- Log publish event:
+    - src/domain/job_run.py record  
+    - src/domain/asset.py record of all published assets  
+
+## 07 — Analytics, Monitoring & Feedback Loop
+- src/services/analytics_service.py → periodically (or via hooks) fetch performance data: traffic, conversions, affiliate revenue, CTR, bounce, etc.  
+- src/agents/analytics_brain (or similar) → aggregate metrics  
+- Alerting: src/agents/alerting_agent or Post-Mortem logic (src/services/post_mortem_service.py) monitors failures or performance drops, logs issues  
+- Write results to DB / logs / reporting tables  
+
+## 08 — Refresh & Maintenance Cycle
+- Refresh job (src/main_refresh.py) periodically triggered (e.g. weekly / monthly)  
+- Uses src/engines/refresh_engine.py → examines performance + age metadata → generates refresh ContentPackets when content is outdated, underperforming, or deals/prices change  
+- Loop through generation → optimization → publish → archive → analytics again  
+
+## 09 — Version Control, Deployment & Job Scheduling
+- Code stored in Git (structure under project root)  
+- Docker multi-stage build + GitHub Actions CI/CD manage builds and deployments  
+- Terraform / Cloud-Run (or chosen infra) runs scheduled jobs (trendpulse, submitter, retriever, refresh)  
+- Secrets & credentials managed via environment variables / secret manager  
+
+## 10 — Summary of Data Flow Path Example (“New Tool Deal Story”)
+Input (feed/trend) → Signal → Strategy → (Finance check) → Batch → AI generation → Optimization → Monetization → Publish → Archive → Analytics → Feedback → Refresh / Next Cycle

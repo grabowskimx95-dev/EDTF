@@ -1,0 +1,114 @@
+import google.generativeai as genai
+import json
+import os
+import time
+
+# --- CONFIGURATION ---
+API_KEY = "YOUR_GEMINI_API_KEY_HERE" # <--- PASTE KEY HERE
+genai.configure(api_key=API_KEY)
+MODEL_NAME = 'gemini-1.5-flash'
+DB_PATH = "./dtf_system_data/"
+
+# --- 1. THE ROUTER (Traffic Control) ---
+class DTFRouter:
+    def analyze(self, user_input):
+        print(f"\n🚦 ROUTER: Analyzing command: '{user_input}'...")
+        prompt = f"""
+        Role: Master Router for DTF Empire.
+        Task: Classify this command into a PIPELINE.
+        
+        Pipelines:
+        1. CONTENT_MODE (Blogs, Reviews -> Needs Researcher, Writer, Monetizer)
+        2. FAST_TASK (Quick questions -> Needs General Agent)
+        3. STRATEGY_MODE (Planning -> Needs Architect)
+        
+        Output JSON: {{ "pipeline": "CONTENT_MODE" }} (or other)
+        """
+        model = genai.GenerativeModel(MODEL_NAME, generation_config={"response_mime_type": "application/json"})
+        try:
+            return json.loads(model.generate_content(prompt + f"\nINPUT: {user_input}").text)
+        except:
+            return {"pipeline": "FAST_TASK"}
+
+# --- 2. THE SENTIENT ENGINE (The Core) ---
+class DTFEngine:
+    def __init__(self):
+        self.registry_file = os.path.join(DB_PATH, "dtf_registry.json")
+        self.history_file = os.path.join(DB_PATH, "dtf_history.json")
+        self.load_memory()
+
+    def load_memory(self):
+        with open(self.registry_file, "r") as f:
+            self.registry = json.load(f)
+
+    def execute_pipeline(self, pipeline_type, user_goal):
+        print(f"   ⚙️  ENGINE: Spinning up pipeline '{pipeline_type}'...")
+        
+        # DEFINE STANDARD PIPELINES (Hard-coded efficiency)
+        if pipeline_type == "CONTENT_MODE":
+            workflow = [
+                {"agent": "Researcher", "task": f"Get technical specs and facts for: {user_goal}"},
+                {"agent": "Content_Engineer", "task": "Write a full blog post based on the research provided."},
+                {"agent": "Affiliate_Scout", "task": "Inject affiliate link placeholders and create a supply list table."}
+            ]
+        elif pipeline_type == "STRATEGY_MODE":
+            workflow = [
+                {"agent": "Researcher", "task": f"Analyze trends related to: {user_goal}"},
+                {"agent": "Content_Engineer", "task": "Write a strategic brief based on this."}
+            ]
+        else:
+            # Default fallback
+            workflow = [{"agent": "Content_Engineer", "task": user_goal}]
+
+        # EXECUTION LOOP
+        context_data = ""
+        for step in workflow:
+            agent_name = step['agent']
+            task = step['task']
+            
+            # Recruiter Logic (Auto-Growth)
+            if agent_name not in self.registry:
+                print(f"   ✨ RECRUITER: Agent '{agent_name}' missing. Building now...")
+                # (Simplified recruiter for this block)
+                self.registry[agent_name] = f"You are {agent_name}. Act professionally."
+                # In real prod, we save this back to JSON here
+
+            print(f"   🔨 WORKER: [{agent_name}] is working...")
+            worker = genai.GenerativeModel(MODEL_NAME, system_instruction=self.registry[agent_name])
+            
+            # Context Chaining (Passing the baton)
+            full_prompt = f"PREVIOUS CONTEXT:\n{context_data}\n\nYOUR TASK: {task}"
+            response = worker.generate_content(full_prompt)
+            context_data = response.text
+            
+        return context_data
+
+# --- 3. MAIN EXECUTION (Ignition) ---
+if __name__ == "__main__":
+    # Initialize
+    router = DTFRouter()
+    engine = DTFEngine()
+    
+    print("="*60)
+    print("      DTF EMPIRE: PRODUCTION CORE ONLINE      ")
+    print("="*60)
+    
+    # Simulating a CEO Command
+    user_command = input("📝 ENTER COMMAND: ") 
+    # Try: "Write a guide on the best subfloor adhesive for cold weather"
+    
+    # 1. Route
+    route_data = router.analyze(user_command)
+    
+    # 2. Execute
+    final_result = engine.execute_pipeline(route_data['pipeline'], user_command)
+    
+    # 3. Output
+    print("\n" + "="*30 + " FINAL ASSET " + "="*30)
+    print(final_result)
+    print("="*75)
+    
+    # Optional: Save to file
+    with open("dtf_final_output.md", "w") as f:
+        f.write(final_result)
+    print("✅ Asset saved to dtf_final_output.md")

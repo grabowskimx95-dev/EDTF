@@ -1,0 +1,127 @@
+========================================================================
+             DTF EMPIRE: SENTIENT HIVE SYSTEM - MASTER PACKAGE
+========================================================================
+DATE: December 10, 2025
+AUTHOR: Lead Developer (DTF_Empire)
+VERSION: 1.0 (Genesis Build)
+
+------------------------------------------------------------------------
+SECTION 1: TECHNICAL MANUAL & SOP
+------------------------------------------------------------------------
+
+1. SYSTEM OVERVIEW
+   You have acquired a Multi-Agent Autonomous System. Unlike standard AI, 
+   this system possesses:
+   - MEMORY: It remembers past successes/failures in a database.
+   - GROWTH: It automatically creates new AI agents when it encounters 
+     new problems (e.g., if you ask for a TikTok, it builds a TikTok agent).
+   - OVERSIGHT: It includes a "Quality Control" layer that reviews work 
+     before showing it to you.
+
+2. INSTALLATION GUIDE (GOOGLE COLAB)
+   A. Get your API Key from: https://aistudio.google.com/
+   B. Go to Google Colab: https://colab.research.google.com/
+   C. Create a New Notebook.
+   D. In the first code cell, run this command:
+      !pip install -q -U google-generativeai
+   E. In the second code cell, paste the PYTHON SOURCE CODE found in 
+      Section 2 of this document.
+
+3. OPERATION MANUAL
+   A. Insert your API Key where the code says "YOUR_GEMINI_API_KEY_HERE".
+   B. Run the code cell (Play Button).
+   C. When the prompt appears ("ENTER COMMAND"), type your request.
+      Example: "Write a blog post about the best subfloor adhesive."
+   D. The system will Plan, Recruit, Execute, and Review automatically.
+   E. Check your Google Drive folder (created automatically) to see the 
+      registry of agents growing over time.
+
+------------------------------------------------------------------------
+SECTION 2: PYTHON SOURCE CODE (THE ENGINE)
+------------------------------------------------------------------------
+(Copy everything below this line into your Python environment)
+
+import google.generativeai as genai
+import json
+import os
+import time
+import re
+
+# --- CONFIGURATION ---
+# REPLACE WITH YOUR KEY
+API_KEY = "YOUR_GEMINI_API_KEY_HERE"
+
+genai.configure(api_key=API_KEY)
+MODEL_NAME = 'gemini-1.5-flash'
+
+# File System Setup (Auto-detects Colab vs Local)
+try:
+    from google.colab import drive
+    drive.mount('/content/drive')
+    BASE_PATH = "/content/drive/My Drive/DTF_Empire_Data/"
+except:
+    BASE_PATH = "./dtf_system_data/"
+
+REGISTRY_FILE = os.path.join(BASE_PATH, "dtf_registry.json")
+HISTORY_FILE = os.path.join(BASE_PATH, "dtf_learning_log.json")
+
+# Ensure Directory Exists
+if not os.path.exists(BASE_PATH):
+    os.makedirs(BASE_PATH)
+    print(f"📂 System Directory Active: {BASE_PATH}")
+
+# --- MEMORY FUNCTIONS ---
+
+def load_json(filename, default_data):
+    if not os.path.exists(filename):
+        save_json(filename, default_data)
+        return default_data
+    try:
+        with open(filename, "r") as f:
+            return json.load(f)
+    except:
+        save_json(filename, default_data)
+        return default_data
+
+def save_json(filename, data):
+    with open(filename, "w") as f:
+        json.dump(data, f, indent=4)
+
+# --- THE META-AGENTS ---
+
+def dtf_architect(user_goal, current_roster, feedback=""):
+    """Designs the workflow."""
+    roster = ", ".join(current_roster.keys())
+    prompt = f"""
+    GOAL: {user_goal}
+    AGENTS: {roster}
+    FEEDBACK: {feedback}
+    Design a workflow. Output strictly JSON: 
+    [ {{"step": 1, "agent": "Name", "instruction": "Task"}} ]
+    """
+    model = genai.GenerativeModel(MODEL_NAME, generation_config={"response_mime_type": "application/json"})
+    try:
+        return json.loads(model.generate_content(prompt).text)
+    except:
+        return []
+
+def dtf_recruiter(agent_name):
+    """Builds new agents."""
+    print(f"   ✨ RECRUITING: Building new agent '{agent_name}'...")
+    prompt = f"Create a system instruction for a '{agent_name}' for a Construction Brand. Professional tone."
+    return genai.GenerativeModel(MODEL_NAME).generate_content(prompt).text.strip()
+
+def dtf_overseer_critique(plan, user_goal):
+    """Reviews the plan."""
+    prompt = f"GOAL: {user_goal}\nPLAN: {json.dumps(plan)}\nRole: Manager. APPROVED or REJECTED?"
+    response = genai.GenerativeModel(MODEL_NAME).generate_content(prompt).text
+    return ("APPROVED" in response), response
+
+# --- MAIN EXECUTION LOOP ---
+
+def run_hive(user_goal):
+    print(f"\n🚀 SYSTEM ACTIVATED: Processing '{user_goal}'")
+    registry = load_json(REGISTRY_FILE, {
+        "Researcher": "You are a Researcher. Gather factual specs.",
+        "Writer": "You are a Construction Writer. Authoritative tone.",
+        "Monetizer": "You are a Sales Expert.

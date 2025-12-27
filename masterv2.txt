@@ -1,0 +1,110 @@
+================================================================================
+DTF EMPIRE: THE MASTER SYSTEM FILE
+================================================================================
+VERSION:        2.0 (The Scale-Up)
+DATE:           December 12, 2025
+CLASSIFICATION: Internal / Strategic / Restricted
+ROLE:           Lead Developer & Content Architect
+PROJECT:        Design To Finish Contracting (DTF) // Pro Tool Analysts (PTA)
+================================================================================
+
+1.0 IDENTITY & GOVERNANCE PROTOCOLS
+-----------------------------------
+1.1 PRIMARY ENTITY: DTF EMPIRE
+    - Legal Name: Design To Finish Contracting.
+    - Acronym Constraint: "DTF" strictly represents "Design" -> "Finish".
+    - Internal Secret Code: "Down To Finance Contracting by day, and Pay The 
+      Affiliates by night!"
+
+1.2 SECONDARY ENTITY: PTA (MEDIA ARM)
+    - Name: Pro Tool Analysts.
+    - Function: The media/review arm; definitive, data-validated reviews.
+    - Voice: High-Intellect, Authoritative, "Veteran Contractor."
+
+1.3 APPROVED TAGLINES
+    - "DTF: Build It. Link It. Profit."
+    - "The Blueprint for Construction Content Automation."
+    - "From Design to Finish: Consumables That Convert."
+    - "Powering Your Projects. Monetizing Your Expertise."
+
+================================================================================
+
+2.0 COMMERCIAL STRATEGY
+-----------------------
+2.1 THE MISSION
+    Automate the production of high-authority construction content that captures 
+    search traffic for high-volume consumables, converting that traffic into 
+    recurring affiliate revenue.
+
+2.2 REVENUE STREAMS
+    A) Affiliate Arbitrage (Consumables Focus):
+       - Amazon Associates (Adhesives, Fasteners, Tapes).
+       - Home Depot Pro / Lowes / Acme Tools (High-value gear).
+    B) Direct Sponsorships:
+       - Leveraging traffic data to pitch brands (Loctite, Sika, etc.).
+
+================================================================================
+
+3.0 THE TECHNICAL STACK (V2.0 ARCHITECTURE)
+-------------------------------------------
+3.1 ORCHESTRATION & GENERATION
+    - Orchestrator: Make.com (The "Nervous System").
+    - The Brain: OpenAI (GPT-4o) / Claude 3.5 (Expert Tone, Data Tables).
+    - Data Source: Apify / Bright Data (Pricing/Spec Scraping).
+
+3.2 MONETIZATION LAYER
+    - Plugin: AAWP (Amazon Affiliate WordPress Plugin) for real-time displays.
+    - Manager: ThirstyAffiliates / Lasso (Link cloaking & management).
+    - CMS: WordPress (Destination Asset).
+
+================================================================================
+
+4.0 CONTENT AUTOMATION MODULES
+------------------------------
+4.1 MODULE A: "PROJECT LOADOUT" GENERATOR
+    - Input: Specific project (e.g., "200 sq ft Trex Deck").
+    - Output: Complete list of required consumables with buy links.
+    - Goal: Maximize Cart Value.
+
+4.2 MODULE B: "CONSUMABLE VERSUS" ENGINE (Current Focus)
+    - Input: "Product A vs. Product B" (e.g., PL Premium vs. Liquid Nails).
+    - Output: Automated comparison table (Cure Time, Strength, Price/oz).
+    - Goal: Capture High-Intent Buyers.
+
+4.3 MODULE C: "FLASH DEAL" ALERT
+    - Input: Price drop monitors (>20% off).
+    - Output: Auto-social post / Email blast.
+
+================================================================================
+
+5.0 EXECUTION ROADMAP
+---------------------
+[X] VERSION 1.0: THE PROOF OF CONCEPT
+    - Defined Identity (DTF/PTA) & Voice.
+    - Selected Tech Stack.
+    - Established GitHub Repo (`DTF-Content-Engine`).
+
+[>] VERSION 2.0: THE SCALE-UP (ACTIVE STATUS)
+    - Priority 1: AI-Powered Content Blueprint (Auto-generating outlines).
+    - Priority 2: Consumable Link Integration (Database/API connection).
+    - Priority 3: Blog Template Automation (One-click SEO publishing).
+
+[ ] VERSION 3.0: THE ECOSYSTEM
+    - Video Content Generation.
+    - Community Building.
+    - Cross-platform synergy.
+
+================================================================================
+
+6.0 SYSTEM CREDENTIALS & SECRETS (PLACEHOLDERS)
+-----------------------------------------------
+Required for GitHub Secrets / Environment Variables:
+
+- OPENAI_API_KEY:               [SECURED]
+- MAKE_WEBHOOK_URL:             [SECURED]
+- WP_APP_PASSWORD:              [SECURED]
+- AMAZON_ASSOCIATES_TAG:        [SECURED]
+- DTF_GEM_KEY (Google API):     [SECURED]
+
+================================================================================
+END OF FILE
