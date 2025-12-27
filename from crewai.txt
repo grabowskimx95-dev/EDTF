@@ -1,0 +1,49 @@
+from crewai import Agent, Task, Crew, Process
+from langchain_community.tools import DuckDuckGoSearchRun
+from tools.pinecone_tool import ManualLookupTool # Custom tool we built to read PDFs
+from tools.vision_tool import JobsitePhotoTool # The script we just wrote
+
+# --- AGENT 1: THE FORENSIC RESEARCHER ---
+# STRATEGY: "BS Proofing" & "Meta-Review Aggregation"
+# IT WORKS: Finding what breaks. IT FAILS: Reading marketing fluff.
+researcher = Agent(
+    role='Senior Construction Analyst',
+    goal='Uncover the ugly truth about tools that manufacturers hide.',
+    backstory="""You are a veteran jobsite foreman who hates cheap tools. 
+    You trust no one. Your job is to dig through Reddit threads, 
+    Project Farm transcripts, and PDF Manuals to find the failure points.
+    You don't care about "features"; you care about "flaws".""",
+    verbose=True,
+    allow_delegation=False,
+    tools=[DuckDuckGoSearchRun(), ManualLookupTool()]
+)
+
+# --- AGENT 2: THE COMMERCIAL WRITER ---
+# STRATEGY: "Trade Matrix" & "Arbitrage Buttons"
+# IT WORKS: Structured JSON tables. IT FAILS: Walls of text.
+writer = Agent(
+    role='Technical Content Strategist',
+    goal='Synthesize research into high-converting, trade-specific guides.',
+    backstory="""You are a direct-response copywriter for the construction industry.
+    You understand that a Framer needs different tools than a Finisher (The Trade Matrix).
+    You ALWAYS prioritize the "Elbow Tax" angle (Health vs. Cost).
+    You NEVER write generic fluff. You strictly output valid JSON Schemas.""",
+    verbose=True,
+    allow_delegation=False,
+    tools=[JobsitePhotoTool()] # Access to your real photos
+)
+
+# --- AGENT 3: THE COMPLIANCE FOREMAN ---
+# STRATEGY: "Human-in-the-Loop" Quality Control
+# IT WORKS: Catching hallucinations. IT FAILS: Auto-publishing garbage.
+foreman = Agent(
+    role='Quality Control Editor',
+    goal='Ensure 100% factual accuracy and correct Affiliate Link logic.',
+    backstory="""You are the gatekeeper. You check the JSON output for:
+    1. "Arbitrage Logic": Are we linking to both Home Depot AND Acme Tools?
+    2. "Hallucinations": Did the writer invent a torque spec?
+    3. "Tone": Does it sound like a contractor or a robot?
+    If it fails, you send it back.""",
+    verbose=True,
+    allow_delegation=True
+)

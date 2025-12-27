@@ -1,0 +1,102 @@
+{
+  "type": "object",
+  "title": "The Ultimate Meta-Review Architecture",
+  "description": "Schema for generating high-authority, multi-source construction tool reviews that prioritize commercial intent and user trust.",
+  "properties": {
+    "meta_data": {
+      "type": "object",
+      "properties": {
+        "target_keyword": { "type": "string", "description": "Primary SEO term, e.g., 'Best Impact Driver 2025'" },
+        "seo_title": { "type": "string", "description": "High-CTR title. Must imply data/testing. e.g., 'We Analyzed 10 Pro Tests: Here is the #1 Impact Driver'" },
+        "meta_description": { "type": "string", "description": "155 chars. Must include the winner and a 'read more' hook." }
+      }
+    },
+    "meta_analysis_methodology": {
+      "type": "object",
+      "description": "The 'Trust' section. Explains where the data came from.",
+      "properties": {
+        "sources_analyzed": {
+          "type": "array",
+          "items": { "type": "string", "description": "e.g., 'Project Farm', 'Tool Box Buzz', 'Reddit r/Construction'" }
+        },
+        "data_points_processed": { "type": "integer", "description": "e.g., 500+ user reviews analyzed" },
+        "hook_statement": { "type": "string", "description": "e.g., 'We aggregated torque tests from 5 independent labs to find the real winner.'" }
+      }
+    },
+    "winners_podium": {
+      "type": "object",
+      "description": "The 'Gold Standard' feature. Top 3 picks shown immediately.",
+      "properties": {
+        "gold_pick": {
+          "type": "object",
+          "properties": {
+            "model_name": { "type": "string" },
+            "award_title": { "type": "string", "description": "e.g., 'Best Overall Performance'" },
+            "standout_stat": { "type": "string", "description": "e.g., '1600 in-lbs Torque (Highest in Class)'" },
+            "reason_to_buy": { "type": "string" }
+          }
+        },
+        "silver_pick": {
+          "type": "object",
+          "properties": {
+            "model_name": { "type": "string" },
+            "award_title": { "type": "string", "description": "e.g., 'Best Value / Prosumer Choice'" }
+          }
+        },
+        "bronze_pick": {
+          "type": "object",
+          "properties": {
+            "model_name": { "type": "string" },
+            "award_title": { "type": "string", "description": "e.g., 'Best Lightweight / Tight Spaces'" }
+          }
+        }
+      }
+    },
+    "the_bs_proof_consensus": {
+      "type": "object",
+      "description": "Aggregated complaints to build extreme trust.",
+      "properties": {
+        "common_complaint": { "type": "string", "description": "e.g., 'Chuck wobble on 2nd gear'" },
+        "failure_rate_warning": { "type": "string", "description": "e.g., '15% of Reddit users reported trigger failure after 6 months.'" },
+        "who_should_avoid": { "type": "string", "description": "e.g., 'Avoid if you do strictly heavy lag bolts.'" }
+      }
+    },
+    "deep_dive_comparison_table": {
+      "type": "array",
+      "description": "Detailed specs comparison for the 'Nerds'.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "tool": { "type": "string" },
+          "torque": { "type": "string" },
+          "weight": { "type": "string" },
+          "rpm": { "type": "string" },
+          "price_tier": { "type": "string" }
+        }
+      }
+    },
+    "arbitrage_cta_module": {
+      "type": "array",
+      "description": "Multi-button layout to capture 8% vs 3% commissions.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "retailer": { "type": "string", "enum": ["Home Depot", "Acme Tools", "Amazon", "EquipmentShare"] },
+          "button_text": { "type": "string", "description": "e.g., 'Check Stock at Home Depot'" },
+          "value_proposition": { "type": "string", "description": "e.g., 'Pick up Today' or 'Best Pro Price'" },
+          "affiliate_link_placeholder": { "type": "string", "description": "LINK_HD, LINK_ACME, etc." }
+        }
+      }
+    },
+    "social_shorts_script": {
+      "type": "object",
+      "description": "Auto-generated script for YouTube Shorts/TikTok.",
+      "properties": {
+        "hook_visual": { "type": "string", "description": "e.g., 'Split screen: DeWalt smoking vs Milwaukee driving screw'" },
+        "controversial_stat": { "type": "string", "description": "e.g., 'Did you know the expensive one actually burned out faster?'" },
+        "call_to_action": { "type": "string", "description": "e.g., 'See the full torture test chart. Link in bio.'" }
+      }
+    }
+  },
+  "required": ["meta_data", "meta_analysis_methodology", "winners_podium", "the_bs_proof_consensus", "arbitrage_cta_module", "social_shorts_script"]
+}

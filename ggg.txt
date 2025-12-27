@@ -1,0 +1,399 @@
+import os
+
+# --- CONFIGURATION ---
+PROJECT_DIR = "Empire_Docker_V60"
+
+# ==============================================================================
+# 1. ENGINE CODE (V60 - Containerized & Optimized)
+# ==============================================================================
+ENGINE_CODE = r'''import base64
+import json
+import logging
+import os
+import re
+import sqlite3
+import time
+import sys
+import csv
+from datetime import date, datetime
+import requests
+import toml
+
+# --- CONFIG ---
+DB_FILE = "/data/empire.db"  # Persisted in Docker volume
+SECRETS_PATH = "/app/secrets.toml"
+LOG_FILE = "/data/empire_activity.log"
+PACKET_ROOT = "/data/packets"
+
+# Ensure directories exist (Docker handles volume mounts, but good to be safe)
+os.makedirs("/data", exist_ok=True)
+os.makedirs(PACKET_ROOT, exist_ok=True)
+
+# --- LOGGING ---
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s",
+                    handlers=[logging.FileHandler(LOG_FILE), logging.StreamHandler(sys.stdout)])
+
+# --- DATABASE ---
+def get_conn():
+    return sqlite3.connect(DB_FILE, timeout=30)  # Timeout fix from V36
+
+def init_db():
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("""CREATE TABLE IF NOT EXISTS posts (
+        id INTEGER PRIMARY KEY, name TEXT UNIQUE, niche TEXT, link TEXT, 
+        status TEXT, app_url TEXT, image_url TEXT, video_path TEXT, created_at TEXT)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS run_log (id INTEGER PRIMARY KEY, run_date TEXT, item_name TEXT)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS error_log (
+        id INTEGER PRIMARY KEY, item_name TEXT, stage TEXT, message TEXT, created_at TEXT)""")
+    
+    # Defaults
+    c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('system_status', 'RUNNING')")
+    conn.commit()
+    conn.close()
+
+def log_error(item, stage, msg):
+    try:
+        conn = get_conn()
+        conn.execute("INSERT INTO error_log (item_name, stage, message, created_at) VALUES (?,?,?,?)",
+                     (item, stage, str(msg)[:500], datetime.utcnow().isoformat()))
+        conn.commit(); conn.close()
+    except: pass
+    logging.error(f"[{stage}] {item}: {msg}")
+
+# --- HELPER: IMPORT CSV ---
+def import_csv_source():
+    """Ingests 'sourcing.csv' if present (from the Blue Collar list)."""
+    csv_path = "/data/sourcing.csv"
+    if not os.path.exists(csv_path): return
+    
+    logging.info("📥 Found sourcing.csv! Importing...")
+    try:
+        with open(csv_path, 'r', encoding='utf-8', errors='ignore') as f:
+            reader = csv.DictReader(f)
+            conn = get_conn()
+            count = 0
+            for row in reader:
+                # Adapting columns from your uploaded file
+                name = row.get("Tool Name", row.get("name", "")).strip()
+                cat = row.get("Category", "General").strip()
+                if name:
+                    try:
+                        conn.execute("INSERT OR IGNORE INTO posts (name, niche, status, created_at) VALUES (?, ?, 'Pending', ?)",
+                                     (name, cat, datetime.utcnow().isoformat()))
+                        count += 1
+                    except: pass
+            conn.commit(); conn.close()
+        os.rename(csv_path, f"{csv_path}.imported") # Rename so we don't re-import
+        logging.info(f"✅ Imported {count} items from CSV.")
+    except Exception as e:
+        log_error("SYSTEM", "CSV_Import", str(e))
+
+# --- API & UTILS ---
+def load_secrets():
+    try: return toml.load(SECRETS_PATH)
+    except: return {}
+
+def clean_json(text):
+    """Base64 Fix: Cleans Markdown from GPT JSON responses."""
+    text = re.sub(r"```json|```", "", text).strip()
+    try: return json.loads(text)
+    except: return None
+
+def safe_post(url, json_body, headers):
+    try:
+        r = requests.post(url, json=json_body, headers=headers, timeout=60)
+        return r if r.status_code == 200 else None
+    except Exception as e: return None
+
+# --- AI ACTIONS ---
+def scout_items(secrets):
+    """If no CSV, use Perplexity to find tools."""
+    url = "https://api.perplexity.ai/chat/completions"
+    headers = {"Authorization": f"Bearer {secrets.get('pplx_key')}", "Content-Type": "application/json"}
+    payload = {
+        "model": "llama-3.1-sonar-large-128k-online",
+        "messages": [{"role": "user", "content": "List 3 trending SaaS tools for construction/trades. Return comma-separated list ONLY."}]
+    }
+    r = safe_post(url, payload, headers)
+    if r:
+        items = r.json()["choices"][0]["message"]["content"].split(",")
+        conn = get_conn()
+        for i in items:
+            conn.execute("INSERT OR IGNORE INTO posts (name, niche, status, created_at) VALUES (?, 'Scouted', 'Pending', ?)",
+                         (i.strip(), datetime.utcnow().isoformat()))
+        conn.commit(); conn.close()
+
+def produce_content(item_name, secrets):
+    # 1. Get Facts
+    h_pplx = {"Authorization": f"Bearer {secrets.get('pplx_key')}", "Content-Type": "application/json"}
+    r1 = safe_post("https://api.perplexity.ai/chat/completions", {
+        "model": "llama-3.1-sonar-large-128k-online",
+        "messages": [{"role": "user", "content": f"Key features and pricing for {item_name} construction software."}]
+    }, h_pplx)
+    facts = r1.json()["choices"][0]["message"]["content"] if r1 else "No data."
+
+    # 2. Write Review
+    h_oa = {"Authorization": f"Bearer {secrets.get('openai_key')}", "Content-Type": "application/json"}
+    prompt = f"Write a WordPress HTML blog post review for {item_name} based on: {facts}. Return JSON: {{'html': '...', 'title': '...'}}"
+    r2 = safe_post("https://api.openai.com/v1/chat/completions", {
+        "model": "gpt-4o",
+        "messages": [{"role": "user", "content": prompt}],
+        "response_format": {"type": "json_object"}
+    }, h_oa)
+    
+    return clean_json(r2.json()["choices"][0]["message"]["content"]) if r2 else None
+
+def publish(item_name, content, link, secrets):
+    wp_url = secrets.get("wp_url")
+    auth = base64.b64encode(f"{secrets.get('wp_user')}:{secrets.get('wp_pass')}".encode()).decode()
+    headers = {"Authorization": f"Basic {auth}", "Content-Type": "application/json"}
+    
+    # Smart Link (V35 Logic)
+    track_link = f"{wp_url}/?df_track={item_name.replace(' ','_')}&dest={base64.b64encode(link.encode()).decode()}"
+    final_html = content['html'] + f"<br><a href='{track_link}' class='btn'>Check Price</a>"
+    
+    post = {"title": content['title'], "content": final_html, "status": "draft"}
+    requests.post(f"{wp_url}/wp-json/wp/v2/posts", json=post, headers=headers)
+
+# --- MAIN LOOP ---
+def main():
+    init_db()
+    logging.info("🐳 Empire OS V60 (Docker) Started")
+    
+    while True:
+        try:
+            secrets = load_secrets()
+            conn = get_conn()
+            status = conn.execute("SELECT value FROM settings WHERE key='system_status'").fetchone()[0]
+            conn.close()
+
+            if status != "RUNNING":
+                time.sleep(10); continue
+            
+            # 1. Import CSV if exists
+            import_csv_source()
+
+            # 2. Check for Ready items
+            conn = get_conn()
+            task = conn.execute("SELECT id, name, link FROM posts WHERE status='Ready' LIMIT 1").fetchone()
+            conn.close()
+
+            if task:
+                pid, name, link = task
+                logging.info(f"🔨 Processing: {name}")
+                content = produce_content(name, secrets)
+                if content:
+                    publish(name, content, link, secrets)
+                    get_conn().execute("UPDATE posts SET status='Published' WHERE id=?", (pid,)).commit()
+                    logging.info(f"✅ Published: {name}")
+                else:
+                    get_conn().execute("UPDATE posts SET status='Failed' WHERE id=?", (pid,)).commit()
+            
+            # 3. Scout if empty
+            else:
+                pending = get_conn().execute("SELECT COUNT(*) FROM posts WHERE status='Pending'").fetchone()[0]
+                if pending == 0:
+                    logging.info("🔭 Scouting for new tools...")
+                    scout_items(secrets)
+            
+            time.sleep(10)
+
+        except Exception as e:
+            logging.error(f"Loop Error: {e}")
+            time.sleep(30)
+
+if __name__ == "__main__":
+    main()
+'''
+
+# ==============================================================================
+# 2. DASHBOARD CODE (Streamlit - V60)
+# ==============================================================================
+DASH_CODE = r'''import streamlit as st
+import sqlite3
+import pandas as pd
+import time
+
+st.set_page_config(page_title="Empire V60 Docker", layout="wide")
+
+DB_FILE = "/data/empire.db"
+
+def get_db(): return sqlite3.connect(DB_FILE, timeout=30)
+
+# Sidebar Control
+st.sidebar.title("🚢 Empire Command")
+try:
+    conn = get_db()
+    status = conn.execute("SELECT value FROM settings WHERE key='system_status'").fetchone()
+    status = status[0] if status else "STOPPED"
+    conn.close()
+except: status = "OFFLINE"
+
+st.sidebar.metric("System Status", status)
+if st.sidebar.button("▶ START ENGINE"):
+    c = get_db(); c.execute("UPDATE settings SET value='RUNNING' WHERE key='system_status'"); c.commit(); c.close()
+    st.rerun()
+if st.sidebar.button("🛑 STOP ENGINE"):
+    c = get_db(); c.execute("UPDATE settings SET value='STOPPED' WHERE key='system_status'"); c.commit(); c.close()
+    st.rerun()
+
+# Metrics
+try:
+    conn = get_db()
+    df = pd.read_sql("SELECT * FROM posts ORDER BY id DESC", conn)
+    err = pd.read_sql("SELECT * FROM error_log ORDER BY id DESC LIMIT 10", conn)
+    conn.close()
+    
+    pending = len(df[df['status'] == 'Pending'])
+    published = len(df[df['status'] == 'Published'])
+    
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Pending Jobs", pending)
+    c2.metric("Published", published)
+    c3.metric("Database Size", f"{len(df)} rows")
+    
+    st.subheader("📋 Task Queue")
+    
+    # Editable Grid for Adding Links
+    edited = st.data_editor(df[['id', 'name', 'status', 'link']], key="editor", num_rows="dynamic")
+    
+    # Save Logic
+    if st.button("💾 Save Changes"):
+        conn = get_db()
+        for i, row in edited.iterrows():
+            # If link is added to a Pending item, make it Ready
+            old_stat = df.loc[df['id'] == row['id'], 'status'].values[0] if row['id'] in df['id'].values else 'Pending'
+            new_stat = 'Ready' if row['link'] and row['status'] == 'Pending' else row['status']
+            
+            conn.execute("UPDATE posts SET name=?, link=?, status=? WHERE id=?", 
+                         (row['name'], row['link'], new_stat, row['id']))
+        conn.commit(); conn.close()
+        st.success("Database Updated")
+        time.sleep(1)
+        st.rerun()
+
+    st.subheader("🛑 Error Log")
+    st.dataframe(err)
+
+except Exception as e:
+    st.error(f"Database not initialized yet. Start the container. {e}")
+'''
+
+# ==============================================================================
+# 3. DOCKER CONFIGURATION
+# ==============================================================================
+DOCKERFILE = r'''
+FROM python:3.10-slim
+
+# Install system dependencies (ffmpeg for video, sqlite3)
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install Python libs
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy App Code
+COPY . .
+
+# Run both Engine and Dashboard
+CMD ["sh", "-c", "python engine.py & streamlit run dashboard.py --server.port=8501 --server.address=0.0.0.0"]
+'''
+
+DOCKER_COMPOSE = r'''
+version: '3.8'
+services:
+  empire_v60:
+    build: .
+    container_name: empire_v60
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./data:/data
+      - ./secrets.toml:/app/secrets.toml
+    environment:
+      - PYTHONUNBUFFERED=1
+'''
+
+REQUIREMENTS = "requests\npandas\nstreamlit\ntoml\nmoviepy"
+
+SECRETS_TOML = r'''# API Keys
+openai_key = "sk-..."
+pplx_key = "pplx-..."
+
+# WordPress Config
+wp_url = "https://your-site.com"
+wp_user = "admin"
+wp_pass = "application-password"
+'''
+
+# ==============================================================================
+# 4. PLUGIN (V35 Digital Foreman)
+# ==============================================================================
+PLUGIN_PHP = r'''<?php
+/* Plugin Name: Digital Foreman Tracker V60 */
+add_action('init', 'df_track_click');
+function df_track_click() {
+    if (isset($_GET['df_track']) && isset($_GET['dest'])) {
+        $log = plugin_dir_path(__FILE__) . 'clicks.log';
+        $line = date("Y-m-d H:i:s") . " - " . sanitize_text_field($_GET['df_track']) . "\n";
+        file_put_contents($log, $line, FILE_APPEND);
+        wp_redirect(base64_decode($_GET['dest']));
+        exit;
+    }
+}
+?>'''
+
+README = r'''
+EMPIRE OS V60 - DOCKER EDITION
+==============================
+
+INSTALLATION:
+1. Install Docker Desktop.
+2. Edit 'secrets.toml' with your API keys.
+3. (Optional) Drop your 'Blue Collar SaaS List' CSV into the 'data' folder and rename it to 'sourcing.csv'.
+4. Open terminal here and run:
+   docker-compose up --build -d
+
+ACCESS:
+- Dashboard: http://localhost:8501
+- Data/Logs: Located in the ./data folder
+
+NOTES:
+- The engine runs automatically in the background.
+- Video rendering (MoviePy) is supported (ffmpeg included in container).
+- Database is persistent in ./data/empire.db
+'''
+
+# ==============================================================================
+# INSTALLER LOGIC
+# ==============================================================================
+def create_file(path, content):
+    with open(path, 'w', encoding='utf-8') as f: f.write(content.strip())
+
+def install():
+    base = os.path.join(os.getcwd(), PROJECT_DIR)
+    os.makedirs(base, exist_ok=True)
+    os.makedirs(os.path.join(base, "data"), exist_ok=True)
+
+    create_file(os.path.join(base, "engine.py"), ENGINE_CODE)
+    create_file(os.path.join(base, "dashboard.py"), DASH_CODE)
+    create_file(os.path.join(base, "Dockerfile"), DOCKERFILE)
+    create_file(os.path.join(base, "docker-compose.yml"), DOCKER_COMPOSE)
+    create_file(os.path.join(base, "requirements.txt"), REQUIREMENTS)
+    create_file(os.path.join(base, "secrets.toml"), SECRETS_TOML)
+    create_file(os.path.join(base, "digital-foreman-capture.php"), PLUGIN_PHP)
+    create_file(os.path.join(base, "README.txt"), README)
+
+    print(f"✅ Empire V60 (Docker Edition) created at: {base}")
+    print("👉 Follow instructions in README.txt to launch.")
+
+if __name__ == "__main__":
+    install()

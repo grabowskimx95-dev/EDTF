@@ -1,0 +1,475 @@
+"""
+TITAN B200 INSTALLER - THE FINAL ARCHITECTURE
+Combines:
+1. V52 Stability (SQLite + Resource Guard)
+2. V35 Speed (Bulk Editor UI)
+3. "Digital Foreman" Tracking Plugin (Crucial Missing Piece)
+4. Blue Collar Data Injection (Instant Start)
+"""
+
+import os
+import sys
+
+PROJECT_DIR = "Empire_Titan_B200"
+
+# ==========================================
+# 1. THE ENGINE (With WP Logic & Data Seeding)
+# ==========================================
+ENGINE_CODE = r'''import json
+import logging
+import os
+import re
+import sqlite3
+import time
+import base64
+import requests
+import toml
+from datetime import date, datetime
+
+# Video Engine Check
+try:
+    from moviepy.editor import AudioFileClip, ColorClip, CompositeVideoClip, ImageClip
+    MOVIEPY_AVAIL = True
+except ImportError:
+    MOVIEPY_AVAIL = False
+
+try:
+    import psutil
+except ImportError:
+    psutil = None
+
+# --- CONFIG ---
+DB_FILE = "titan.db"
+SECRETS_PATH = os.path.join(".streamlit", "secrets.toml")
+LOG_DIR = "logs"
+LOG_FILE = os.path.join(LOG_DIR, "titan_core.log")
+PACKET_ROOT = "packets"
+
+os.makedirs(LOG_DIR, exist_ok=True)
+os.makedirs(PACKET_ROOT, exist_ok=True)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [TITAN] %(message)s",
+    handlers=[logging.FileHandler(LOG_FILE, encoding="utf-8"), logging.StreamHandler()]
+)
+
+def get_conn():
+    return sqlite3.connect(DB_FILE, timeout=30)
+
+def init_db():
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("""CREATE TABLE IF NOT EXISTS posts (
+        id INTEGER PRIMARY KEY,
+        name TEXT UNIQUE,
+        niche TEXT,
+        link TEXT,
+        status TEXT,
+        app_url TEXT,
+        image_url TEXT,
+        video_path TEXT,
+        created_at TEXT
+    )""")
+    c.execute("CREATE TABLE IF NOT EXISTS run_log (id INTEGER PRIMARY KEY, run_date TEXT, item_name TEXT)")
+    c.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
+    c.execute("CREATE TABLE IF NOT EXISTS error_log (id INTEGER PRIMARY KEY, item_name TEXT, stage TEXT, message TEXT, created_at TEXT)")
+    
+    # Default State
+    c.execute("INSERT OR IGNORE INTO settings (key,value) VALUES ('system_status','RUNNING')")
+    c.execute("INSERT OR IGNORE INTO settings (key,value) VALUES ('turbo_mode','FALSE')")
+    
+    conn.commit()
+    conn.close()
+
+# --- DATA SEEDING (FROM SAAS LIST) ---
+def seed_database():
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM posts")
+    count = c.fetchone()[0]
+    
+    if count == 0:
+        logging.info("🌱 SEEDING DATABASE with Blue Collar SaaS List...")
+        # Data from Source 40-48
+        seeds = [
+            ("Jobber", "Field Service", "https://getjobber.com"),
+            ("Housecall Pro", "Field Service", "https://housecallpro.com"),
+            ("ServiceTitan", "Enterprise", "https://servicetitan.com"),
+            ("QuickBooks Online", "Accounting", "https://quickbooks.intuit.com"),
+            ("FreshBooks", "Invoicing", "https://freshbooks.com"),
+            ("Houzz Pro", "Project Mgmt", "https://houzz.com/pro"),
+            ("Procore", "Construction Mgmt", "https://procore.com"),
+            ("Fieldwire", "Jobsite Mgmt", "https://fieldwire.com"),
+            ("CompanyCam", "Photo Doc", "https://companycam.com"),
+            ("FleetSharp", "GPS Tracking", "https://fleetsharp.com"),
+            ("Next Insurance", "Insurance", "https://nextinsurance.com"),
+            ("Buildertrend", "Project Mgmt", "https://buildertrend.com"),
+            ("Monday.com", "Workflow", "https://monday.com"),
+            ("Simpro", "Field Service", "https://simprogroup.com"),
+            ("ServiceM8", "Field Service", "https://servicem8.com"),
+            ("NiceJob", "Reputation", "https://nicejob.com"),
+            ("Tradify", "Job Mgmt", "https://tradifyhq.com"),
+            ("ClockShark", "Time Tracking", "https://clockshark.com"),
+            ("Angi Leads", "Lead Gen", "https://angi.com"),
+            ("Thumbtack", "Lead Gen", "https://thumbtack.com")
+        ]
+        
+        for name, niche, url in seeds:
+            try:
+                c.execute("INSERT INTO posts (name, niche, link, status, app_url, created_at) VALUES (?, ?, '', 'Pending', ?, ?)",
+                          (name, niche, url, datetime.utcnow().isoformat()))
+            except sqlite3.IntegrityError:
+                pass
+        logging.info(f"✅ INJECTED {len(seeds)} TOOLS.")
+        conn.commit()
+    conn.close()
+
+def log_error(item, stage, msg):
+    logging.error(f"{item} [{stage}]: {msg}")
+    try:
+        conn = get_conn()
+        c = conn.cursor()
+        c.execute("INSERT INTO error_log (item_name,stage,message,created_at) VALUES (?,?,?,?)",
+                  (item, stage, str(msg)[:500], datetime.utcnow().isoformat()))
+        conn.commit()
+        conn.close()
+    except: pass
+
+def get_setting(key, default=None):
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT value FROM settings WHERE key=?", (key,))
+        row = cur.fetchone()
+        conn.close()
+        return row[0] if row else default
+    except: return default
+
+# --- NETWORK HELPERS ---
+def safe_post(url, json_data, headers):
+    try:
+        r = requests.post(url, json=json_data, headers=headers, timeout=60)
+        return r if r.status_code in (200, 201) else None
+    except: return None
+
+# --- WORDPRESS PUBLISHING (RESTORED FROM V52) ---
+def create_smart_link(wp_url, product, raw_link):
+    # Generates the link that matches the PHP plugin logic
+    clean = re.sub(r"[^\w\s-]", "", product).strip().replace(" ", "_")
+    enc = base64.b64encode(raw_link.encode()).decode()
+    return f"{wp_url.rstrip('/')}/?df_track={clean}&dest={enc}"
+
+def publish_to_wordpress(name, html, raw_link, img_path, secrets):
+    wp_url = secrets.get("wp_url")
+    wp_user = secrets.get("wp_user")
+    wp_pass = secrets.get("wp_pass")
+    
+    if not (wp_url and wp_user and wp_pass):
+        return "Failed - No Creds"
+
+    # 1. Create Tracking Link
+    smart_link = create_smart_link(wp_url, name, raw_link)
+    
+    # 2. Inject Button
+    html += f"""
+    <div style='text-align:center;margin-top:20px;'>
+        <a href='{smart_link}' style='background:#c1121f;color:white;padding:15px 25px;font-weight:bold;text-decoration:none;border-radius:5px;'>
+        CHECK CURRENT PRICE
+        </a>
+        <p style='font-size:12px;margin-top:10px;'>Recommended by DTF Command</p>
+    </div>
+    """
+    
+    auth = base64.b64encode(f"{wp_user}:{wp_pass}".encode()).decode()
+    headers = {"Authorization": f"Basic {auth}"}
+    
+    # 3. Upload Media
+    media_id = None
+    if img_path and os.path.exists(img_path):
+        try:
+            with open(img_path, "rb") as img:
+                h_media = headers.copy()
+                h_media["Content-Type"] = "image/jpeg"
+                h_media["Content-Disposition"] = "attachment; filename=feature.jpg"
+                r = requests.post(f"{wp_url}/wp-json/wp/v2/media", data=img.read(), headers=h_media, timeout=60)
+                if r.status_code == 201:
+                    media_id = r.json().get("id")
+        except Exception as e:
+            log_error(name, "wp_media", str(e))
+
+    # 4. Create Post
+    post_data = {
+        "title": f"{name} Review - Contractor Approved?",
+        "content": html,
+        "status": "draft"
+    }
+    if media_id: post_data["featured_media"] = media_id
+    
+    try:
+        r = requests.post(f"{wp_url}/wp-json/wp/v2/posts", json=post_data, headers=headers, timeout=60)
+        if r.status_code == 201:
+            return "Published"
+        else:
+            log_error(name, "wp_post", f"Status {r.status_code}: {r.text[:200]}")
+            return "Failed - WP Error"
+    except Exception as e:
+        log_error(name, "wp_post", str(e))
+        return "Failed - Network"
+
+# --- MAIN LOOP ---
+def main_loop():
+    init_db()
+    seed_database() # INJECT DATA ON STARTUP
+    logging.info("TITAN B200 ENGINE: ONLINE")
+    
+    while True:
+        try:
+            if get_setting("system_status") != "RUNNING":
+                time.sleep(10)
+                continue
+                
+            secrets = toml.load(SECRETS_PATH)
+            limit = int(secrets.get("daily_run_limit", 5))
+            
+            # Check Budget
+            conn = get_conn()
+            c = conn.cursor()
+            c.execute("SELECT COUNT(*) FROM run_log WHERE run_date=?", (str(date.today()),))
+            runs = c.fetchone()[0]
+            conn.close()
+            
+            if runs >= limit and get_setting("turbo_mode") != "TRUE":
+                time.sleep(300)
+                continue
+            
+            # Find Job
+            conn = get_conn()
+            c = conn.cursor()
+            c.execute("SELECT id, name, link FROM posts WHERE status='Ready' LIMIT 1")
+            row = c.fetchone()
+            conn.close()
+            
+            if row:
+                _id, name, link = row
+                logging.info(f"⚙️ PROCESSING: {name}")
+                
+                # 1. Generate Content
+                openai_key = secrets.get("openai_key")
+                headers = {"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"}
+                
+                # Simplified Content Call for B200 Speed
+                sys_prompt = "You are a St. Louis contractor (DTF Command). Write a raw, honest review in HTML format (no markdown code blocks) for this tool."
+                p_cont = {"model": "gpt-4o", "messages": [{"role":"system","content":sys_prompt},{"role":"user","content":f"Review: {name}"}]}
+                r_cont = safe_post("https://api.openai.com/v1/chat/completions", p_cont, headers)
+                
+                status = "Failed"
+                if r_cont:
+                    html = r_cont.json()["choices"][0]["message"]["content"]
+                    
+                    # 2. Media
+                    img_path = None
+                    try:
+                        p_img = {"model":"dall-e-3", "prompt":f"Contractor using {name} on jobsite", "size":"1024x1024"}
+                        r_img = safe_post("https://api.openai.com/v1/images/generations", p_img, headers)
+                        if r_img:
+                            url = r_img.json()["data"][0]["url"]
+                            img_data = requests.get(url).content
+                            clean = re.sub(r'\W+', '_', name)
+                            img_path = os.path.join(PACKET_ROOT, f"{clean}.jpg")
+                            with open(img_path, "wb") as f: f.write(img_data)
+                    except: pass
+                    
+                    # 3. Publish
+                    status = publish_to_wordpress(name, html, link, img_path, secrets)
+
+                # Update DB
+                conn = get_conn()
+                conn.execute("UPDATE posts SET status=? WHERE id=?", (status, _id))
+                if status == "Published":
+                    conn.execute("INSERT INTO run_log (run_date, item_name) VALUES (?,?)", (str(date.today()), name))
+                conn.commit()
+                conn.close()
+                
+            else:
+                time.sleep(10) # Idle wait
+
+        except Exception as e:
+            log_error("SYSTEM", "Main Loop", str(e))
+            time.sleep(30)
+
+if __name__ == "__main__":
+    main_loop()
+'''
+
+# ==========================================
+# 2. THE DASHBOARD (V35 Bulk Editor Style)
+# ==========================================
+DASHBOARD_CODE = r'''import streamlit as st
+import sqlite3
+import pandas as pd
+import toml
+import os
+import time
+
+st.set_page_config(page_title="TITAN B200", page_icon="🏢", layout="wide")
+DB_FILE = "titan.db"
+
+def get_conn(): return sqlite3.connect(DB_FILE, timeout=30)
+
+# Sidebar
+with st.sidebar:
+    st.header("🏢 COMMANDER")
+    try:
+        conn = get_conn()
+        status = pd.read_sql("SELECT value FROM settings WHERE key='system_status'", conn).iloc[0]['value']
+        conn.close()
+    except: status = "RUNNING"
+    
+    if status == "RUNNING":
+        st.success("🟢 SYSTEM ONLINE")
+        if st.button("STOP"):
+            conn=get_conn(); conn.execute("UPDATE settings SET value='STOPPED' WHERE key='system_status'"); conn.commit(); conn.close(); st.rerun()
+    else:
+        st.error("🔴 SYSTEM OFFLINE")
+        if st.button("START"):
+            conn=get_conn(); conn.execute("UPDATE settings SET value='RUNNING' WHERE key='system_status'"); conn.commit(); conn.close(); st.rerun()
+
+# Main
+st.title("🏗️ DTF Command: Titan B200")
+
+tab1, tab2 = st.tabs(["⚡ RAPID LINKS", "📊 PIPELINE"])
+
+with tab1:
+    conn = get_conn()
+    # Pull Pending items (seeded or scouted)
+    df = pd.read_sql("SELECT id, name, app_url, link FROM posts WHERE status='Pending'", conn)
+    conn.close()
+    
+    if df.empty:
+        st.success("✅ No pending items! The machine is hungry.")
+    else:
+        st.info(f"**ACTION REQUIRED:** {len(df)} items waiting for affiliate links.")
+        
+        # V35 STYLE EDITOR
+        edited = st.data_editor(
+            df,
+            column_config={
+                "id": st.column_config.NumberColumn(disabled=True),
+                "name": st.column_config.TextColumn("Product Name", disabled=True),
+                "app_url": st.column_config.LinkColumn("Apply Here", display_text="👉 Signup Page"),
+                "link": st.column_config.TextColumn("Paste Affiliate Link Here", required=True, width="large")
+            },
+            hide_index=True,
+            num_rows="fixed"
+        )
+        
+        if st.button("✅ SAVE & LAUNCH PRODUCTION", type="primary"):
+            conn = get_conn()
+            saved = 0
+            for i, row in edited.iterrows():
+                if row['link'] and len(str(row['link'])) > 5:
+                    conn.execute("UPDATE posts SET link=?, status='Ready' WHERE id=?", (row['link'], row['id']))
+                    saved += 1
+            conn.commit()
+            conn.close()
+            st.success(f"Launched {saved} items into production!")
+            time.sleep(1)
+            st.rerun()
+
+with tab2:
+    conn = get_conn()
+    df_all = pd.read_sql("SELECT id, name, niche, status, created_at FROM posts ORDER BY id DESC", conn)
+    conn.close()
+    st.dataframe(df_all, use_container_width=True)
+'''
+
+# ==========================================
+# 3. THE MISSING PIECE: WP PLUGIN
+# ==========================================
+PLUGIN_CODE = r'''<?php
+/*
+Plugin Name: Digital Foreman Tracker
+Description: Handles base64 redirect links from Empire OS.
+Version: 2.0
+*/
+
+add_action('init', 'df_track_and_redirect');
+
+function df_track_and_redirect() {
+    // Look for parameters sent by the Python Engine
+    if (isset($_GET['df_track']) && isset($_GET['dest'])) {
+        
+        // 1. Log the click (Optional: creates a CSV on your server)
+        $log_file = plugin_dir_path(__FILE__) . 'click_stats.csv';
+        $entry = date("Y-m-d H:i:s") . "," . sanitize_text_field($_GET['df_track']) . "\n";
+        file_put_contents($log_file, $entry, FILE_APPEND);
+        
+        // 2. Decode the destination
+        $destination = base64_decode($_GET['dest']);
+        
+        // 3. Redirect the user
+        if (filter_var($destination, FILTER_VALIDATE_URL)) {
+            wp_redirect($destination);
+            exit;
+        }
+    }
+}
+?>'''
+
+# ==========================================
+# 4. OPTIMIZATION SCRIPT
+# ==========================================
+OPTIMIZER_BAT = r'''@echo off
+TITLE DTF Server Optimizer
+echo Optimizing for 24/7 Operation...
+powercfg -change -standby-timeout-ac 0
+powercfg -setactive SCHEME_MIN
+echo Done. Please restart.
+pause
+'''
+
+# ==========================================
+# 5. INSTALLER LOGIC
+# ==========================================
+def install():
+    base = os.path.join(os.getcwd(), PROJECT_DIR)
+    print(f"🏗️  Building TITAN B200 at: {base}")
+    
+    os.makedirs(base, exist_ok=True)
+    os.makedirs(os.path.join(base, ".streamlit"), exist_ok=True)
+    
+    # Write Engine
+    with open(os.path.join(base, "engine.py"), "w", encoding="utf-8") as f:
+        f.write(ENGINE_CODE)
+        
+    # Write Dashboard
+    with open(os.path.join(base, "dashboard.py"), "w", encoding="utf-8") as f:
+        f.write(DASHBOARD_CODE)
+        
+    # Write Plugin (The missing file)
+    with open(os.path.join(base, "digital-foreman-tracker.php"), "w", encoding="utf-8") as f:
+        f.write(PLUGIN_CODE)
+        
+    # Write Optimizer
+    with open(os.path.join(base, "optimize_pc.bat"), "w", encoding="utf-8") as f:
+        f.write(OPTIMIZER_BAT)
+
+    # Write Launcher
+    with open(os.path.join(base, "launch.bat"), "w", encoding="utf-8") as f:
+        f.write('@echo off\npip install streamlit pandas requests toml moviepy\nstart /B pythonw engine.py\nstreamlit run dashboard.py')
+
+    # Write Secrets Template
+    with open(os.path.join(base, ".streamlit", "secrets.toml"), "w", encoding="utf-8") as f:
+        f.write('openai_key=""\npplx_key=""\nwp_url=""\nwp_user=""\nwp_pass=""\ndaily_run_limit=10')
+
+    print("============================================")
+    print("✅ INSTALLATION COMPLETE")
+    print("1. Go to folder: Empire_Titan_B200")
+    print("2. Upload 'digital-foreman-tracker.php' to WordPress (Plugins -> Add New -> Upload)")
+    print("3. Edit .streamlit/secrets.toml with your keys")
+    print("4. Run 'launch.bat'")
+    print("============================================")
+
+if __name__ == "__main__":
+    install()

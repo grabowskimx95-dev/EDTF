@@ -1,0 +1,18 @@
+# --- OPENAI KEYS (The Brain) ---
+OPENAI_API_KEY=sk-proj-YOUR_KEY_HERE
+OPENAI_MODEL_NAME=gpt-4o
+
+# --- PINECONE KEYS (The Memory) ---
+PINECONE_API_KEY=YOUR_PINECONE_KEY
+PINECONE_ENV=gcp-starter
+
+# --- STRAPI KEYS (The Dashboard) ---
+# Use any random string for these
+APP_KEYS=randomKey1,randomKey2
+API_TOKEN_SALT=randomSalt
+ADMIN_JWT_SECRET=randomSecret
+TRANSFER_TOKEN_SALT=randomTransfer
+JWT_SECRET=randomJwt
+
+# --- AGENT CONFIG ---
+STRAPI_API_URL=http://dtf_cms:1337/api/review-articles

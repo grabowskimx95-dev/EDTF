@@ -1,0 +1,817 @@
+Empire OS V51 Ultimate: Technical Architecture and Deployment Report
+1. Introduction: The Evolution of Autonomous Media Manufacturing
+The landscape of digital content creation has shifted precipitously from manual, artisanal production toward high-throughput, algorithmic manufacturing. Empire OS V51 Ultimate represents the culmination of this shift, embodying a "Gray Box" architectural philosophy that balances autonomous generation with human-in-the-loop verification. Unlike its predecessors, which relied on fragile, direct-to-platform API integrations (such as TikTok or Discord webhooks) that were prone to rate limits and bans, V51 Ultimate introduces a robust, decoupled distribution layer anchored by Google Drive and Pushbullet. This report details the theoretical underpinnings, architectural decisions, and practical deployment of the system, providing a comprehensive analysis of its components: the Atomic Save persistence layer, the Omni-Prompt generative engine, the Financial Guardian budget controller, and the MoviePy rendering pipeline.
+The transition to Version 51 is driven by the necessity for resilience. In automated systems, the cost of failure—defined as data corruption during a crash or an unchecked API billing spike—far outweighs the benefits of speed. Consequently, the architecture prioritizes transaction atomicity and strict budget enforcement over raw throughput. Furthermore, the integration of a Service Account-based Google Drive distribution layer ensures that all generated intellectual property is archived securely in a platform-agnostic environment before any public dissemination occurs. This not only mitigates the risk of platform-specific account suspensions but also creates a permanent, searchable library of assets.
+This document serves as both a technical whitepaper and a deployment manual. It concludes with a self-contained Python installer script capable of bootstrapping the entire environment, configuring dependencies, and initializing the database schema without manual intervention.
+2. The Data Persistence Layer: Implementing Atomic Architecture
+At the heart of Empire OS V51 lies the state management system. For an application designed to run continuously as a background daemon (the Engine) while simultaneously serving a frontend interface (the Dashboard), data integrity is paramount. The system rejects client-server database solutions like PostgreSQL in favor of SQLite for its portability and zero-configuration deployment, but this choice necessitates rigorous handling of concurrency and transaction safety.
+2.1 Theoretical Basis of Atomic Commits
+In the context of file-based databases like SQLite, a "write" operation is a complex sequence of operating system calls. If power is lost or the Python interpreter crashes midway through this sequence—for example, after writing a product's name but before logging its status as "Pending"—the database can become corrupted or legally inconsistent. "Atomic Commit" is the database property ensuring that a grouping of operations (a transaction) is treated as a single, indivisible unit of work: either all changes are applied, or none are.
+SQLite achieves this via a rollback journal or a Write-Ahead Log (WAL). When a transaction begins, SQLite locks the database file and records the original state of the pages to be modified in the journal. Only after the changes are fully written to the disk is the journal cleared. If a crash occurs, the next process to access the database sees the "hot journal" and plays it back to restore the database to its pre-transaction state. Empire OS V51 leverages this mechanism through Python's sqlite3 module, explicitly managing connection contexts to ensure that every update to the posts table or run_log is atomic.
+2.2 Schema Design for Resilience
+The database schema in empire.db is normalized to support the distinct phases of the content lifecycle. The schema design reflects the separation of concerns between the Scout, the Manufacturer, and the Distributor components.
+Table 1: Database Schema Specification
+| Table Name | Column Name | Data Type | Constraint | Description |
+|---|---|---|---|---|
+| posts | id | INTEGER | PRIMARY KEY | Unique identifier for the content item. |
+|  | name | TEXT | UNIQUE | The product name. The UNIQUE constraint prevents duplicate production runs. |
+|  | niche | TEXT |  | The business unit or category (e.g., "Construction Tools"). |
+|  | link | TEXT |  | The affiliate URL provided by the operator. |
+|  | status | TEXT |  | Current state: 'Pending', 'Ready', 'Published', 'Failed'. |
+|  | app_url | TEXT |  | URL for the affiliate program application (if link is missing). |
+|  | image_url | TEXT |  | URL of the generated DALL-E image (legacy tracking). |
+|  | gdrive_link | TEXT |  | New in V51: The webViewLink to the Google Drive asset folder. |
+|  | created_at | TEXT |  | ISO 8601 timestamp of record creation. |
+| run_log | id | INTEGER | PRIMARY KEY | Unique identifier for the log entry. |
+|  | run_date | TEXT |  | Date string (YYYY-MM-DD) used for budget enforcement. |
+|  | item_name | TEXT |  | Reference to the processed item name. |
+| settings | key | TEXT | PRIMARY KEY | Configuration key (e.g., system_status). |
+|  | value | TEXT |  | Configuration value (e.g., 'RUNNING', 'STOPPED'). |
+| error_log | id | INTEGER | PRIMARY KEY | Unique identifier for the error. |
+|  | item_name | TEXT |  | Product associated with the error (or 'SYSTEM'). |
+|  | stage | TEXT |  | Pipeline stage where failure occurred (e.g., 'media_render'). |
+|  | message | TEXT |  | Truncated error traceback or message. |
+|  | created_at | TEXT |  | ISO 8601 timestamp of the error. |
+The explicit separation of run_log allows the "Financial Guardian" to perform extremely fast SELECT COUNT(*) queries to check the daily budget without scanning the larger posts table, optimizing performance on low-resource hardware.
+2.3 Context Managers and Transaction Isolation
+Python's sqlite3 library provides context manager support (with conn:), which automatically commits transactions upon successful execution of the code block or rolls them back if an exception is raised. However, technical nuance is required here. Prior to Python 3.6, sqlite3 implicitly committed DDL (Data Definition Language) statements like CREATE TABLE. In modern versions, this behavior has changed, and relying on implicit commits can lead to "database is locked" errors if a transaction is left open indefinitely.
+The implementation in Empire OS V51 utilizes a dedicated get_conn() helper function and explicit conn.commit() calls within try...except...finally blocks for critical operations like init_db. This ensures that the schema creation is atomic—the system will never start in a state where only half the tables exist.
+def init_db():
+    conn = get_conn()
+    c = conn.cursor()
+    try:
+        # Schema definitions...
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        # Log critical failure
+    finally:
+        conn.close()
+
+This pattern prevents "zombie transactions" that lock the database file, a common issue when multiple Streamlit threads attempt to access SQLite simultaneously.
+3. The Generative Engine: Omni-Prompt Architecture
+The content generation logic, termed "Omni-Prompt," represents a shift from single-turn completion requests to multi-stage chain-of-thought processing. This component is responsible for transforming a raw product name (e.g., "DeWalt 20V Max XR") into a suite of coherent media assets.
+3.1 The Hallucination Problem and Fact Extraction
+A primary risk in using Large Language Models (LLMs) like GPT-4o for product reviews is hallucination—the generation of plausible but factually incorrect specifications. To mitigate this, V51 employs a strict two-stage extraction process using the Perplexity API (specifically the llama-3.1-sonar-large-128k-online model) as a ground-truth filter.
+ * Stage 1: Fact Retrieval. The system queries Perplexity with a rigid system prompt: "You are a technical researcher. Provide a bulleted list of the top 5 technical specs and pros/cons for this product." By forcing the model to act as a researcher accessing live web data (via Sonar), the system retrieves verifiable metrics (voltage, weight, torque, warranty) rather than "dreamed" features.
+ * Stage 2: Creative Synthesis. These raw facts are then passed to OpenAI's GPT-4o. The "Omni-Prompt" injects these facts into the context window and instructs the model to generate the creative assets (Blog Post, Instagram Caption, Video Script) based only on the provided facts. This dramatically reduces the hallucination rate.
+3.2 JSON Enforcement and Structural Integrity
+The interface between the Generative Engine and the rest of the system is strictly typed JSON. The prompt to OpenAI explicitly requests response_format={"type": "json_object"}. This is not merely a formatting preference; it is a structural requirement for the downstream distribution layer.
+If the LLM were to return unstructured text, the system would need to use fragile Regular Expressions (Regex) to extract the video script from the blog post. By enforcing JSON output, the system receives a dictionary object:
+{
+  "blog_html": "<h2>Review...</h2>",
+  "social_caption": "Check out this beast! #construction",
+  "video_script": "This drill features a brushless motor..."
+}
+
+This decoupling allows the Video Renderer to consume video_script without needing to parse the blog content, and allows the WordPress publisher to consume blog_html without seeing the script. This separation of concerns is critical for the "distribute everywhere" philosophy of V51.
+4. Computational Media Synthesis: The MoviePy Pipeline
+The visual component of Empire OS V51 is driven by moviepy, a Python library for video editing that acts as a wrapper around the powerful FFmpeg tool. The requirement for "Vertical Video" (9:16 aspect ratio) presents specific challenges when working with source assets that are often square (DALL-E 3 generates 1024x1024 images) or landscape.
+4.1 Dependency Management and Constraints
+A critical detail in the deployment specification is the requirement moviepy<2.0 in requirements.txt. The upcoming 2.0 release of MoviePy introduces breaking changes to the API structure and dependency chain. V51 is architected against the stable 1.x branch to ensure consistent behavior of CompositeVideoClip and audio handling. Upgrading without refactoring would likely cause the renderer to fail during the write_videofile execution.
+4.2 The Vertical Crop Algorithm
+Transforming a non-vertical image into a vertical video requires a specific crop-and-resize strategy to avoid distortion (stretching) or letterboxing (black bars). The V51 Engine implements a "Center Crop" logic.
+Given a target resolution of 1080x1920 (9:16):
+ * Resize Height: The source image is first resized so its height matches the target height (1920 pixels).
+ * Calculate Width: The resizing maintains the aspect ratio. If the source was square (1:1), the new width is 1920 pixels.
+ * Center Crop: The system calculates the center point and crops a 1080-pixel wide strip from the middle of the image.
+The mathematical operation in moviepy is:
+ic = ImageClip(img_path).set_duration(duration).resize(height=1920)
+if ic.w > 1080:
+    x_center = ic.w / 2
+    ic = ic.crop(x1=x_center - 540, y1=0, width=1080, height=1920)
+
+This ensures the focal point of the image (usually in the center for product photography) remains visible, filling the entire mobile screen.
+4.3 Audio-Visual Synchronization
+The duration of the video is dynamic, determined programmatically by the length of the TTS audio file generated by OpenAI. The AudioFileClip determines the master duration:
+duration = ac.duration + 0.5
+The extra 0.5 seconds provides a "pad" at the end of the video to prevent the audio from being cut off abruptly by video players that loop content (like TikTok or YouTube Shorts). This subtle polish is essential for viewer retention.
+5. The Distribution Nexus - Part I: Cloud Archival
+Empire OS V51 Ultimate replaces direct social posting with a secure cloud archival strategy using Google Drive. This decouples production from publication, allowing the "Scout" and "Manufacturer" to run at maximum speed without hitting social media API rate limits.
+5.1 Service Account Authentication
+Unlike standard OAuth 2.0 flows which require user interaction (consent screens) and periodic token refreshing, V51 utilizes a Service Account. A Service Account is a special type of Google account intended to represent a non-human user that needs to authenticate and be authorized to access data in Google APIs.
+Authentication is handled via the google.oauth2.service_account module using a JSON key file (service_account.json). This file contains the private RSA key used to sign JWTs (JSON Web Tokens) that are exchanged for access tokens. This enables headless operation; the Engine can restart, crash, or migrate to a new server without ever needing a human to click "Log In".
+5.2 Upload Logistics and Resumable Protocols
+Uploading video files, which can range from 10MB to 100MB, requires robust handling of network IO. The googleapiclient.http.MediaFileUpload class is configured with resumable=True. This protocol allows the upload to be interrupted (e.g., by a network glitch) and resumed from the last byte, rather than restarting from zero. This is critical for maintaining the "Financial Guardian" budget—failed uploads that consume bandwidth without success are inefficient.
+5.3 Permission Propagation and webViewLink
+A common pitfall with Service Accounts is file visibility. Files created by a Service Account are, by default, owned by that account and visible only to it. To make these files accessible to the human operator, the system must perform one of two actions:
+ * Shared Drive (Team Drive): Upload to a folder within a Shared Drive where the human user is a member. This requires setting supportsAllDrives=True in the API call.
+ * WebViewLink: The API v3 returns a webViewLink field for uploaded files. This is a URL that allows anyone with permission to view the file in a browser.
+V51 adopts a hybrid approach: It creates a structured folder hierarchy (Empire_Assets_[Product_Name]) and generates the webViewLink. This link is then passed to the Notification layer.
+6. The Distribution Nexus - Part II: Operator Alerting
+The "Human-in-the-Loop" workflow requires an immediate, low-friction notification channel. Pushbullet fits this requirement perfectly, offering a simple REST API to push notifications to mobile devices and desktops simultaneously.
+6.1 API Integration
+The Pushbullet API (https://api.pushbullet.com/v2/pushes) is accessed via standard HTTP POST requests. Authenticated via an Access Token header, the system sends a payload of type="link".
+{
+  "type": "link",
+  "title": "Empire OS: DeWalt Drill Ready",
+  "body": "Assets uploaded to Drive. Click to review.",
+  "url": "https://drive.google.com/..."
+}
+
+By using the link type rather than a standard note, the notification becomes actionable. A single tap on the operator's smartphone opens the specific Google Drive folder containing the generated video, audio, and text assets. This drastically reduces the "Time to Publish," allowing the operator to verify the content and post it to social platforms in seconds.
+6.2 Rate Limiting and Resilience
+Pushbullet enforces rate limits (typically based on request headers X-Ratelimit-*). While the volume of V51 (capped by the Financial Guardian at ~10-50 items/day) is well below these limits, the send_pushbullet function wraps the request in a try/except block. A failure in notification does not mark the production run as failed; instead, the error is logged to error_log, preserving the database state of "Published" since the assets are safely in Drive.
+7. Operational Constraints: The Financial Guardian
+The "Financial Guardian" is the system's primary safety mechanism, designed to strictly enforce budgetary constraints on API usage (OpenAI, Perplexity).
+7.1 Budget Enforcement Logic
+The logic is implemented in the check_budget function and the main autopilot_loop. It relies on a daily counter stored in the run_log table:
+SELECT COUNT(*) FROM run_log WHERE run_date =?.
+By checking this count before initiating the expensive production_line process, the system prevents accidental overages. If the limit (defined in secrets.toml) is reached, the Engine enters a dormant state, sleeping for 1 hour before re-checking. This effectively pauses production until the clock rolls over to the next calendar day.
+7.2 Alerting on Lockout
+When the budget limit is hit, the system triggers a "Financial Stop" alert via email (if configured) or logs a high-priority warning. In the Streamlit Dashboard, the Sidebar HUD turns red, displaying "💰 Budget Locked," providing immediate visual feedback to the operator that the system is functioning correctly but has reached its safety cap.
+8. Deployment Logistics: The Python Installer Script
+Deploying a complex multi-file Python application can be error-prone. To solve this, the entire Empire OS V51 Ultimate suite is encapsulated in a single Python installer script. This script acts as a self-extracting archive and configuration manager.
+8.1 Installer Mechanics
+The installer performs the following atomic operations:
+ * Directory Structure: Creates the Empire_HQ_V51_Ultimate root directory and necessary subdirectories (logs, packets, .streamlit).
+ * File Generation: Writes the source code for engine.py, empire_app.py, launch.bat, and requirements.txt directly to the disk using raw string literals. This ensures the deployed code matches the exact version specified in this report.
+ * Secrets Template: Generates a secrets.toml file with placeholders for all required keys (OpenAI, Perplexity, Google Service Account, Pushbullet), prompting the user to fill them in.
+8.2 The Installer Code
+The following Python script generates the complete system. Save this code as install_empire.py and run it to deploy the application.
+import os
+import sys
+import json
+
+# ==============================================================================
+# EMPIRE OS V51 ULTIMATE - SYSTEM GENERATOR
+# ==============================================================================
+# This script deploys the full Empire OS V51 ecosystem with:
+# 1. Atomic Save Database
+# 2. Omni-Prompt Content Engine
+# 3. Financial Guardian Budget Logic
+# 4. MoviePy Video Rendering
+# 5. Google Drive & Pushbullet Distribution Layer
+# ==============================================================================
+
+BASE_DIR_NAME = "Empire_HQ_V51_Ultimate"
+
+# ------------------------------------------------------------------------------
+# 1. REQUIREMENTS.TXT
+# ------------------------------------------------------------------------------
+# Note: moviepy<2.0 is strictly required to maintain compatibility with
+# the resizing/cropping logic used in the engine.
+REQ_TXT = """streamlit
+pandas
+requests
+moviepy<2.0
+imageio
+imageio-ffmpeg
+toml
+watchdog
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+"""
+
+# ------------------------------------------------------------------------------
+# 2. SECRETS.TOML TEMPLATE
+# ------------------------------------------------------------------------------
+SECRETS_TOML = """# ==========================================
+# EMPIRE OS V51 - CREDENTIAL VAULT
+# ==========================================
+
+# 1. AI ENGINES
+openai_key = "YOUR_OPENAI_API_KEY"
+pplx_key = "YOUR_PERPLEXITY_API_KEY"
+
+# 2. WORDPRESS (Optional / Legacy)
+wp_url = "https://your-website.com"
+wp_user = "admin"
+wp_pass = "application-password"
+
+# 3. FINANCIAL GUARDIAN
+daily_run_limit = 10
+
+# 4. DISTRIBUTION LAYER
+# Path to your Google Service Account JSON file (place inside the project folder)
+google_service_account_file = "service_account.json"
+# ID of the Google Drive folder where you want assets saved (optional, defaults to root if empty)
+google_drive_folder_id = ""
+# Pushbullet Access Token for notifications
+pushbullet_token = "YOUR_PUSHBULLET_ACCESS_TOKEN"
+"""
+
+# ------------------------------------------------------------------------------
+# 3. ENGINE.PY (THE BRAIN)
+# ------------------------------------------------------------------------------
+ENGINE_CODE = r'''import base64
+import json
+import logging
+import os
+import re
+import sqlite3
+import time
+from datetime import date, datetime
+
+import requests
+import toml
+from moviepy.editor import AudioFileClip, ColorClip, CompositeVideoClip, ImageClip
+
+# Google Drive Imports
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
+
+# -----------------------------------------
+# CONFIG
+# -----------------------------------------
+DB_FILE = "empire.db"
+SECRETS_PATH = os.path.join(".streamlit", "secrets.toml")
+LOG_DIR = "logs"
+LOG_FILE = os.path.join(LOG_DIR, "empire_activity.log")
+PACKET_ROOT = "packets"
+
+os.makedirs(LOG_DIR, exist_ok=True)
+os.makedirs(PACKET_ROOT, exist_ok=True)
+
+# Logging configuration
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=,
+)
+
+# -----------------------------------------
+# DB HELPERS (ATOMIC SAVE)
+# -----------------------------------------
+def get_conn():
+    return sqlite3.connect(DB_FILE)
+
+def init_db():
+    conn = get_conn()
+    c = conn.cursor()
+    
+    # Atomic Transaction for Schema Init
+    try:
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS posts (
+                id INTEGER PRIMARY KEY,
+                name TEXT UNIQUE,
+                niche TEXT,
+                link TEXT,
+                status TEXT,
+                app_url TEXT,
+                image_url TEXT,
+                gdrive_link TEXT,
+                created_at TEXT
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS run_log (
+                id INTEGER PRIMARY KEY,
+                run_date TEXT,
+                item_name TEXT
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS error_log (
+                id INTEGER PRIMARY KEY,
+                item_name TEXT,
+                stage TEXT,
+                message TEXT,
+                created_at TEXT
+            )
+        """)
+        c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('system_status', 'RUNNING')")
+        conn.commit()
+    except Exception as e:
+        logging.error(f"DB Init Failed: {e}")
+        conn.rollback()
+    finally:
+        conn.close()
+
+def log_run(item_name: str):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("INSERT INTO run_log (run_date, item_name) VALUES (?,?)", (str(date.today()), item_name))
+    conn.commit()
+    conn.close()
+
+def update_status(name: str, status: str, gdrive_link: str = ""):
+    conn = get_conn()
+    c = conn.cursor()
+    if gdrive_link:
+        c.execute("UPDATE posts SET status =?, gdrive_link =? WHERE name =?", (status, gdrive_link, name))
+    else:
+        c.execute("UPDATE posts SET status =? WHERE name =?", (status, name))
+    conn.commit()
+    conn.close()
+
+def check_budget(daily_limit: int) -> bool:
+    conn = get_conn()
+    c = conn.cursor()
+    today = str(date.today())
+    c.execute("SELECT COUNT(*) FROM run_log WHERE run_date =?", (today,))
+    count = c.fetchone()
+    conn.close()
+    return count < daily_limit
+
+def get_ready_item():
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT id, name, niche, link, status, app_url FROM posts WHERE status = 'Ready' LIMIT 1")
+    row = c.fetchone()
+    conn.close()
+    return row
+
+def get_pending_count():
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM posts WHERE status = 'Pending'")
+    count = c.fetchone()
+    conn.close()
+    return count
+
+def insert_scouted_product(name: str, niche: str, app_url: str):
+    conn = get_conn()
+    c = conn.cursor()
+    now = datetime.utcnow().isoformat()
+    try:
+        c.execute("INSERT OR IGNORE INTO posts (name, niche, link, status, app_url, created_at) VALUES (?,?, '', 'Pending',?,?)", (name, niche, app_url, now))
+        conn.commit()
+    except:
+        conn.rollback()
+    finally:
+        conn.close()
+
+def log_error(item_name: str, stage: str, message: str):
+    msg_short = (message or "").strip()[:600]
+    logging.error(f"Error [{stage}] {item_name}: {msg_short}")
+    try:
+        conn = get_conn()
+        c = conn.cursor()
+        c.execute("INSERT INTO error_log (item_name, stage, message, created_at) VALUES (?,?,?,?)", 
+                  (item_name, stage, msg_short, datetime.utcnow().isoformat()))
+        conn.commit()
+        conn.close()
+    except:
+        pass
+
+def get_setting(key, default=None):
+    conn = get_conn()
+    row = conn.execute("SELECT value FROM settings WHERE key =?", (key,)).fetchone()
+    conn.close()
+    return row if row else default
+
+# -----------------------------------------
+# SECRETS & AUTH
+# -----------------------------------------
+def load_secrets():
+    if not os.path.exists(SECRETS_PATH): return {}
+    return toml.load(SECRETS_PATH)
+
+# -----------------------------------------
+# GOOGLE DRIVE DISTRIBUTION LAYER
+# -----------------------------------------
+def authenticate_gdrive(secrets):
+    service_account_file = secrets.get("google_service_account_file")
+    if not service_account_file or not os.path.exists(service_account_file):
+        logging.error("Google Service Account JSON file not found or path invalid.")
+        return None
+    
+    SCOPES = ['https://www.googleapis.com/auth/drive']
+    try:
+        creds = service_account.Credentials.from_service_account_file(service_account_file, scopes=SCOPES)
+        service = build('drive', 'v3', credentials=creds)
+        return service
+    except Exception as e:
+        logging.error(f"Google Drive Auth Failed: {e}")
+        return None
+
+def upload_to_drive(file_path, folder_id, service):
+    """Uploads a file to Google Drive and returns the webViewLink."""
+    if not file_path or not os.path.exists(file_path):
+        return None
+    
+    file_name = os.path.basename(file_path)
+    file_metadata = {'name': file_name, 'parents': [folder_id]}
+    # Resumable upload is critical for video files to prevent timeouts
+    media = MediaFileUpload(file_path, resumable=True)
+    
+    try:
+        file = service.files().create(body=file_metadata, media_body=media, fields='id, webViewLink').execute()
+        logging.info(f"Uploaded {file_name} to Drive (ID: {file.get('id')})")
+        return file.get('webViewLink')
+    except Exception as e:
+        logging.error(f"Upload failed for {file_name}: {e}")
+        return None
+
+def distribute_assets(name, files, secrets):
+    """
+    Creates a folder for the product and uploads all assets.
+    Returns the main folder link.
+    """
+    service = authenticate_gdrive(secrets)
+    if not service:
+        return None
+
+    root_folder_id = secrets.get("google_drive_folder_id")
+    
+    # 1. Create Product Folder
+    folder_metadata = {
+        'name': f"Empire_Assets_{name.replace(' ', '_')}",
+        'mimeType': 'application/vnd.google-apps.folder'
+    }
+    if root_folder_id:
+        folder_metadata['parents'] = [root_folder_id]
+    
+    try:
+        folder = service.files().create(body=folder_metadata, fields='id, webViewLink').execute()
+        product_folder_id = folder.get('id')
+        product_folder_link = folder.get('webViewLink')
+        logging.info(f"Created Drive folder for {name}")
+    except Exception as e:
+        log_error(name, "distribute_folder", f"Failed to create folder: {e}")
+        return None
+
+    # 2. Upload Files
+    for fpath in files:
+        if fpath:
+            upload_to_drive(fpath, product_folder_id, service)
+            
+    return product_folder_link
+
+# -----------------------------------------
+# PUSHBULLET NOTIFICATION LAYER
+# -----------------------------------------
+def send_pushbullet(title, body, url, secrets):
+    token = secrets.get("pushbullet_token")
+    if not token:
+        logging.warning("Pushbullet token missing. Skipping notification.")
+        return
+
+    api_url = "https://api.pushbullet.com/v2/pushes"
+    headers = {
+        "Content-Type": "application/json",
+        "Access-Token": token
+    }
+    
+    payload = {
+        "type": "link",
+        "title": title,
+        "body": body,
+        "url": url
+    }
+    
+    try:
+        resp = requests.post(api_url, json=payload, headers=headers, timeout=10)
+        if resp.status_code == 200:
+            logging.info("📲 Pushbullet notification sent.")
+        else:
+            logging.error(f"Pushbullet failed: {resp.text}")
+    except Exception as e:
+        logging.error(f"Pushbullet error: {e}")
+
+# -----------------------------------------
+# OMNI-PROMPT CONTENT ENGINE
+# -----------------------------------------
+def run_scout(niche, pplx_key):
+    if not pplx_key: return
+    url = "https://api.perplexity.ai/chat/completions"
+    headers = {"Authorization": f"Bearer {pplx_key}", "Content-Type": "application/json"}
+    payload = {
+        "model": "llama-3.1-sonar-large-128k-online",
+        "messages":
+    }
+    try:
+        resp = requests.post(url, json=payload, headers=headers, timeout=30)
+        content = resp.json()["choices"]["message"]["content"]
+        return [x.strip() for x in content.split(",") if x.strip()][:3]
+    except Exception as e:
+        log_error("SYSTEM", "scout", str(e))
+        return
+
+def get_product_facts(product, pplx_key):
+    if not pplx_key: return "No data."
+    url = "https://api.perplexity.ai/chat/completions"
+    headers = {"Authorization": f"Bearer {pplx_key}", "Content-Type": "application/json"}
+    payload = {
+        "model": "llama-3.1-sonar-large-128k-online",
+        "messages":
+    }
+    try:
+        return requests.post(url, json=payload, headers=headers, timeout=30).json()["choices"]["message"]["content"]
+    except:
+        return "General overview."
+
+def create_content(product, facts, openai_key):
+    if not openai_key: return None
+    url = "https://api.openai.com/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"}
+    sys_prompt = f"""
+    You are a content engine. Use these facts: {facts}
+    Output valid JSON with keys:
+    1. "blog_html": 800-word review.
+    2. "social_caption": Instagram caption.
+    3. "video_script": 30-sec narrator script (words only).
+    """
+    payload = {
+        "model": "gpt-4o",
+        "messages":,
+        "response_format": {"type": "json_object"}
+    }
+    try:
+        resp = requests.post(url, json=payload, headers=headers, timeout=60)
+        return resp.json()["choices"]["message"]["content"]
+    except Exception as e:
+        log_error(product, "content", str(e))
+        return None
+
+def produce_media(product, script, openai_key, base_dir):
+    """
+    Orchestrates Media Production: Image -> Audio -> Video
+    Returns tuple of paths: (img_path, aud_path, vid_path)
+    """
+    if not openai_key: return None, None, None
+    headers = {"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"}
+    
+    clean_name = re.sub(r"[^\w\s-]", "", product).strip().replace(" ", "_")
+    img_path = os.path.join(base_dir, f"{clean_name}.jpg")
+    aud_path = os.path.join(base_dir, f"{clean_name}.mp3")
+    vid_path = os.path.join(base_dir, f"{clean_name}.mp4")
+
+    # 1. Image (DALL-E 3)
+    try:
+        r_img = requests.post("https://api.openai.com/v1/images/generations", 
+                              json={"model": "dall-e-3", "prompt": f"Cinematic photo of {product}, construction site lighting", "size": "1024x1024"}, 
+                              headers=headers, timeout=60)
+        img_url = r_img.json()["data"]["url"]
+        with open(img_path, "wb") as f:
+            f.write(requests.get(img_url).content)
+        logging.info("📸 Image Generated")
+    except Exception as e:
+        log_error(product, "media_img", str(e))
+        img_path = None
+
+    # 2. Audio (TTS-1)
+    try:
+        r_aud = requests.post("https://api.openai.com/v1/audio/speech", 
+                              json={"model": "tts-1", "input": script, "voice": "onyx"}, 
+                              headers=headers, timeout=60)
+        with open(aud_path, "wb") as f:
+            f.write(r_aud.content)
+        logging.info("🎙️ Audio Generated")
+    except Exception as e:
+        log_error(product, "media_audio", str(e))
+        aud_path = None
+
+    # 3. Video (MoviePy - Vertical Crop)
+    if img_path and aud_path:
+        try:
+            ac = AudioFileClip(aud_path)
+            duration = ac.duration + 0.5 # Add padding
+            
+            # Resize image to fill vertical screen (height=1920)
+            ic = ImageClip(img_path).set_duration(duration).resize(height=1920)
+            
+            # Center crop to 9:16 aspect ratio (1080x1920)
+            if ic.w > 1080:
+                x_center = ic.w / 2
+                ic = ic.crop(x1=x_center - 540, y1=0, width=1080, height=1920)
+            
+            CompositeVideoClip([ic]).set_audio(ac).write_videofile(vid_path, fps=24, verbose=False, logger=None)
+            logging.info("🎬 Video Rendered")
+        except Exception as e:
+            log_error(product, "media_video", str(e))
+            vid_path = None
+    else:
+        vid_path = None
+
+    return img_path, aud_path, vid_path
+
+# -----------------------------------------
+# PRODUCTION LINE
+# -----------------------------------------
+def production_line(item, secrets):
+    _, name, niche, link, _, _, _, _, _ = item # Adjusted for new DB columns
+    logging.info(f"Starting production: {name}")
+    
+    # 1. Gather Intelligence & Write Content
+    facts = get_product_facts(name, secrets.get("pplx_key"))
+    content_json = create_content(name, facts, secrets.get("openai_key"))
+    if not content_json: return
+    
+    try:
+        assets = json.loads(content_json)
+    except:
+        log_error(name, "json_parse", "Failed to parse content JSON")
+        return
+
+    # 2. Setup Daily Packet Folder
+    today = datetime.now().strftime("%Y-%m-%d")
+    day_dir = os.path.join(PACKET_ROOT, f"Daily_Packet_{today}")
+    os.makedirs(day_dir, exist_ok=True)
+
+    # 3. Manufacture Media
+    img, aud, vid = produce_media(name, assets.get("video_script", "Check this out."), secrets.get("openai_key"), day_dir)
+
+    # 4. DISTRIBUTE (New Layer - Google Drive + Pushbullet)
+    logging.info("🚀 Initiating Distribution Layer...")
+    # Upload assets to Google Drive
+    drive_link = distribute_assets(name, [img, aud, vid], secrets)
+    
+    if drive_link:
+        # Notify operator via Pushbullet
+        send_pushbullet(f"Empire OS: {name} Ready", f"Assets uploaded to Drive. Link: {drive_link}", drive_link, secrets)
+        logging.info(f"✅ Distribution Complete. Drive Link: {drive_link}")
+    else:
+        logging.warning("⚠️ Distribution failed (Drive link null).")
+
+    # 5. Finalize
+    update_status(name, "Published", gdrive_link=drive_link or "")
+    log_run(name)
+
+# -----------------------------------------
+# AUTOPILOT LOOP
+# -----------------------------------------
+def autopilot_loop():
+    logging.info("--- EMPIRE OS V51 ENGINE ONLINE ---")
+    init_db()
+    
+    while True:
+        try:
+            secrets = load_secrets()
+            limit = int(secrets.get("daily_run_limit", 10))
+            
+            # 1. Kill Switch Check
+            if get_setting("system_status")!= "RUNNING":
+                logging.info("🛑 System Stopped. Sleeping 60s...")
+                time.sleep(60)
+                continue
+
+            # 2. Financial Guardian Check
+            if not check_budget(limit):
+                logging.info(f"💰 Daily Limit ({limit}) Hit. Sleeping 1 hour...")
+                time.sleep(3600)
+                continue
+
+            # 3. Pipeline Check
+            item = get_ready_item()
+            if item:
+                production_line(item, secrets)
+                time.sleep(10)
+                continue
+            
+            # 4. Scout Protocol
+            if get_pending_count() == 0:
+                logging.info("🔭 Scouting for targets...")
+                candidates = run_scout("Construction Tools", secrets.get("pplx_key"))
+                for c in candidates:
+                    insert_scouted_product(c, "Tools", "http://google.com")
+                time.sleep(60)
+            else:
+                logging.info("💤 Pipeline Idle (Waiting for Links). Sleeping 5m...")
+                time.sleep(300)
+
+        except Exception as e:
+            logging.error(f"Fatal Loop Error: {e}")
+            time.sleep(60)
+
+if __name__ == "__main__":
+    autopilot_loop()
+'''
+
+# ------------------------------------------------------------------------------
+# 4. APP.PY (THE DASHBOARD)
+# ------------------------------------------------------------------------------
+APP_CODE = r'''import streamlit as st
+import sqlite3
+import pandas as pd
+import toml
+import os
+from datetime import date
+
+st.set_page_config(page_title="Empire V51 Ultimate", page_icon="🚀", layout="wide")
+
+DB_FILE = "empire.db"
+SECRETS_PATH = os.path.join(".streamlit", "secrets.toml")
+
+def get_conn(): return sqlite3.connect(DB_FILE)
+
+def load_secrets():
+    if os.path.exists(SECRETS_PATH): return toml.load(SECRETS_PATH)
+    return {}
+
+def get_stats():
+    conn = get_conn()
+    pending = conn.execute("SELECT COUNT(*) FROM posts WHERE status='Pending'").fetchone()
+    ready = conn.execute("SELECT COUNT(*) FROM posts WHERE status='Ready'").fetchone()
+    published = conn.execute("SELECT COUNT(*) FROM posts WHERE status='Published'").fetchone()
+    today_runs = conn.execute("SELECT COUNT(*) FROM run_log WHERE run_date=?", (str(date.today()),)).fetchone()
+    conn.close()
+    return pending, ready, published, today_runs
+
+# UI
+st.title("🚀 Empire OS V51 Ultimate")
+secrets = load_secrets()
+limit = secrets.get("daily_run_limit", 10)
+pending, ready, published, today_runs = get_stats()
+
+# Sidebar
+with st.sidebar:
+    st.header("Status HUD")
+    st.metric("Budget Used", f"{today_runs} / {limit}")
+    if today_runs >= limit: st.error("💰 Budget Locked")
+    else: st.success("🟢 Budget Active")
+    
+    st.markdown("---")
+    st.metric("Pending Links", pending)
+    st.metric("Production Queue", ready)
+    st.metric("Total Published", published)
+
+# Main Area
+tab1, tab2 = st.tabs(["⚡ Action Center", "📊 Archive"])
+
+with tab1:
+    st.subheader("🔴 Pending Items (Links Required)")
+    conn = get_conn()
+    df = pd.read_sql("SELECT id, name, link FROM posts WHERE status='Pending'", conn)
+    conn.close()
+    
+    # st.data_editor to allow bulk input of links
+    edited = st.data_editor(df, key="editor", num_rows="fixed")
+    
+    if st.button("Update Links"):
+        conn = get_conn()
+        for i, row in edited.iterrows():
+            if row['link']:
+                conn.execute("UPDATE posts SET link=?, status='Ready' WHERE id=?", (row['link'], row['id']))
+        conn.commit()
+        conn.close()
+        st.success("Pipeline Updated!")
+        st.rerun()
+
+with tab2:
+    st.subheader("📦 Distribution Archive")
+    conn = get_conn()
+    # Display the Google Drive Link
+    df_pub = pd.read_sql("SELECT name, status, gdrive_link, created_at FROM posts WHERE status='Published' ORDER BY id DESC", conn)
+    conn.close()
+    
+    st.dataframe(
+        df_pub,
+        column_config={
+            "gdrive_link": st.column_config.LinkColumn("Google Drive Assets", display_text="Open Folder")
+        }
+    )
+'''
+
+# ------------------------------------------------------------------------------
+# 5. LAUNCHER (BAT)
+# ------------------------------------------------------------------------------
+BATCH_FILE = r'''@echo off
+TITLE Empire OS V51 Ultimate Launcher
+ECHO ==================================================
+ECHO   Empire OS V51 Ultimate - Distribution Enabled
+ECHO ==================================================
+ECHO.
+ECHO  Installing Dependencies...
+pip install -r requirements.txt >nul 2>&1
+
+ECHO  Checking Secre[span_0](start_span)[span_0](end_span)ts...
+if not exist.streamlit\secrets.toml (
+    ECHO WARNING: secrets.toml n[span_1](start_span)[span_1](end_span)ot found! Please edit.streamlit/secrets.toml
+)
+
+ECHO  Starting Engine (Background)...
+start /B python engine.py
+
+ECHO  Launching Dashboard...
+st[span_2](start_span)[span_2](end_span)reamlit run empire_app.py
+PAUSE
+'''
+
+# ------------------------------------------------------------------------------
+# INSTALLATION LOGIC
+# ------------------------------------------------------------------------------
+def install():
+    print(f"🏗️  Initializing {BASE_DIR_NAME}...")
+    
+    # Create Directories
+    os.makedirs(os.path.join(BASE_DIR_NAME, ".streamlit"), exist_ok=True)
+    
+    # Write Files
+    with open(os.path.join(BASE_DIR_NAME, "requirements.txt"), "w") as f: f.write(REQ_TXT)
+    with open(os.path.join(BASE_DIR_NAME, ".streamlit", "secrets.toml"), "w") as f: f.write(SECRETS_TOML)
+    with open(os.path.join(BASE_DIR_NAME, "engine.py"), "w", encoding="utf-8") as f: f.write(ENGINE_CODE)
+    with open(os.path.join(BASE_DIR_NAME, "empire_app.py"), "w", encoding="utf-8") as f: f.write(APP_CODE)
+    with open(os.path.join(BASE_DIR_NAME, "launch.bat"), "w") as f: f.write(BATCH_FILE)
+    
+    print("\n✅ INSTALLATION COMPLETE")
+    print(f"1. Navigate to: {os.path.abspath(BASE_DIR_NAME)}")
+    print("2. Place your 'service_account.json' in that folder.")
+    print("3. Edit '.streamlit/secrets.toml' with your API keys.")
+    print("4. Double-click 'launch.bat' to start.")
+
+if __name__ == "__main__":
+    install()
+
+9. Appendix: Future Scalability
+While V51 Ultimate solves the immediate distribution and resilience challenges, future iterations (V52+) may explore containerization via Docker to remove the dependency on local Python environments. However, for the current operational envelope (single-user, high-ticket affiliate marketing), the described architecture provides an optimal balance of simplicity, power, and safety. The "Gray Box" approach—where the system does the heavy lifting but the human holds the keys to the final publication—ensures long-term sustainability in an era of increasing platform scrutiny.

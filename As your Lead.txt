@@ -1,0 +1,29 @@
+As your Lead Developer, I have analyzed the Empire V60 "Warlord" optimized installer. This version is engineered for maximum efficiency, utilizing "Economy Mode" with gpt-4o-mini to minimize API costs while maintaining high-impact output.
+​Below is the comprehensive action plan. You can copy the code block at the end of this response, save it as DTF_Warlord_Blueprint.md, and you will have your downloadable documentation.
+​## The "Warlord" Action Plan: Content-to-Commerce Automation
+​### Phase 1: Systems Hardening & Optimization
+​Goal: Prepare the local environment for 24/7 autonomous operation.
+​Action: Run the DTF_Optimizer.bat as Administrator.
+​Reasoning: Windows power settings often throttle performance or put the system to sleep during long automation runs. This script disables standby, sets the "High Performance" power plan, and enables hardware-accelerated GPU scheduling for faster video rendering.
+​Stability Control: The system uses a Resource Guard 2.0 to monitor CPU and RAM usage. If CPU usage exceeds 90% or RAM exceeds 95%, the engine automatically pauses to prevent a system crash.
+​### Phase 2: The "Scout" (Market Intelligence)
+​Goal: Identify high-ticket trending tools without manual research.
+​Action: Execute the run_scout function utilizing the Perplexity API (Llama-3.1-sonar-large).
+​Reasoning: Real-time search is required to find what is trending now in the 2024-2025 contractor market.
+​How-to: The engine returns a clean, comma-separated list of tool names, which are then cross-referenced against your "Pending" queue in the empire.db SQLite database.
+​### Phase 3: The "Fact-Check" & Content Factory
+​Goal: Generate technical, blue-collar authority content at 5% of the usual cost.
+​Action: Use a "Density List" strategy for facts. Instead of long paragraphs, the system pulls raw technical specs, pricing, and specific Pros/Cons.
+​Reasoning: Feeding raw data into the gpt-4o-mini model saves on input tokens while allowing the model to focus strictly on the "DTF Voice" during the creative phase.
+​Output: The content is formatted as JSON, containing the blog HTML, an Instagram caption, and a 30-second video script.
+​### Phase 4: Media Production (The Multimedia Edge)
+​Goal: Create visual and audio assets to dominate multiple platforms.
+​Action: Generate a cinematic thumbnail via DALL-E 3 and professional narration using the TTS-1 "Onyx" voice.
+​Reasoning: High-quality visuals increase the Click-Through Rate (CTR) on blog posts.
+​Video Render: Using MoviePy, the engine combines the image and audio into a vertical video (1080x1920) for YouTube Shorts or Reels. To prevent memory leaks during high-volume runs, the script includes explicit garbage collection and file closing.
+​### Phase 5: Distribution & Link Wiring
+​Goal: Publish to WordPress with automated affiliate link tracking.
+​Action: Utilize the Streamlit "Warlord HQ" dashboard to "wire" affiliate links.
+​Reasoning: The engine finds the products, but a human (you) adds the specific affiliate URLs in the dashboard to ensure the money goes to the right account.
+​Monetization: Every post includes a high-conversion, CSS-styled "CHECK BEST PRICE" button that is automatically injected into the HTML.
+​## Downloadable Blueprint (Save as .md)

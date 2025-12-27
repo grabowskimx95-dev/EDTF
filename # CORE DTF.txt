@@ -1,0 +1,14 @@
+# CORE DTF EMPIRE LIBRARIES
+google-genai
+requests
+toml
+psutil
+sqlite3
+# moviepy (Optional, for V3.0 video features)
+
+# NEW HYPER-ORCHESTRATION LAYER
+crewai[tools]
+pydantic==1.10.13  # Required for CrewAI 
+haystack-ai
+farm-haystack[all]
+kestra-sdk

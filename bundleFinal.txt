@@ -1,0 +1,148 @@
+import os
+import zipfile
+from google.colab import files
+
+# ==========================================
+# DEFINE ALL FILES (CODE + DOCS)
+# ==========================================
+FILE_CONTENTS = {
+    # --- 1. CORE OPS ---
+    "DTF_Empire/ops/initialize_empire.py": r"""import os
+def create_file(path, content):
+    with open(path, "w", encoding="utf-8") as f: f.write(content.strip())
+    print(f"   📄 Generated: {path}")
+
+STRUCTURE = {
+    "core_infrastructure": ["event_bus_interface", "retry_and_error_handler", "logging_and_metrics", "config_and_env_manager"],
+    "data_brick_core": ["data_models", "storage_layer", "tagging_and_clustering", "media_asset_store", "brick_query_interface"],
+    "strategic_oversight": ["overseer_agent", "predictive_strategy_engine", "j_curve_agent", "cfo_agent"],
+    "content_generation_pipeline": ["content_engine", "fact_checker_agent", "persona_engine", "vaporizer_engine", "linking_engine", "price_verification_service", "revenue_engine", "publish_and_archive"],
+    "outreach_and_monetization": ["affiliate_funnel_manager", "email_funnel_service", "cta_optimizer", "monetization_dashboard_connector"],
+    "analytics_feedback_loop": ["analytics_service", "rank_tracker_service", "performance_analyzer", "feedback_dispatcher"],
+    "media_processing": ["media_optimizer_engine", "reality_media_ingest", "fallback_media_handler"],
+    "content_lifecycle_maintenance": ["refresh_engine", "internal_link_optimizer", "price_update_scheduler", "decay_detector"],
+    "multi_channel_expansion": ["multi_channel_expansion_engine", "adaptive_title_engine", "snippet_engine"],
+    "dashboard_and_control_tower": ["dashboard_backend", "dashboard_frontend", "config_manager", "manual_override_interface"],
+    "domain_input_acquisition": ["keyword_intelligence_engine", "trendpulse_engine", "competitor_intel_crawler", "reality_ingest_engine"],
+    "ops": []
+}
+
+def build_empire():
+    print(f"🏗️  INITIALIZING DTF EMPIRE V80...")
+    if not os.path.exists("DTF_EMPIRE"): os.makedirs("DTF_EMPIRE")
+    for domain, modules in STRUCTURE.items():
+        d_path = os.path.join("DTF_EMPIRE", domain)
+        os.makedirs(d_path, exist_ok=True)
+        create_file(os.path.join(d_path, "__init__.py"), "")
+        for m in modules:
+            m_path = os.path.join(d_path, m)
+            os.makedirs(m_path, exist_ok=True)
+            create_file(os.path.join(m_path, "__init__.py"), "")
+    
+    # Core Files
+    create_file("DTF_EMPIRE/core_infrastructure/event_bus_interface/event_bus.py", "class EventBus:\n    def __init__(self): self.subs={}\n    def subscribe(self,e,h): self.subs.setdefault(e,[]).append(h)\n    def publish(self,e,p): [h(p) for h in self.subs.get(e,[])]; print(f'[BUS] {e}: {p}')\nevent_bus=EventBus()")
+    create_file("DTF_EMPIRE/data_brick_core/data_models/agent_registry.py", "AGENTS = {}\n")
+    create_file("DTF_EMPIRE/data_brick_core/storage_layer/applet_access_history.json", "[]")
+    print("\n✅ DTF EMPIRE BUILT SUCCESSFULLY.")
+
+if __name__ == "__main__": build_empire()
+""",
+
+    # --- 2. RECRUITMENT ---
+    "DTF_Empire/ops/bulk_recruit_tier1.py": r"""import os
+TIER_1 = {
+    "Content_Operations_Director": "Mission: Oversee content production. Assign topics. Check quality.",
+    "SEO_Strategy_Architect": "Mission: Design topic clusters and URL structures.",
+    "Affiliate_Revenue_Engineer": "Mission: Maximize EPC/CTR. Optimize buttons and tables.",
+    "Product_Review_Specialist": "Mission: Generate No-BS reviews. 'Pros/Cons' tables.",
+    "Market_Trend_Sentinel": "Mission: Detect early signals. Report high-velocity keywords."
+}
+def inject():
+    path = "DTF_EMPIRE/data_brick_core/data_models/agent_registry.py"
+    with open(path, "a") as f:
+        for k,v in TIER_1.items(): f.write(f'\nAGENTS["{k}"] = """{v}"""\n')
+    print("✅ Tier 1 Recruited.")
+if __name__ == "__main__": inject()
+""",
+
+    "DTF_Empire/ops/bulk_recruit_tier2.py": r"""import os
+TIER_2 = {
+    "Long_Form_Authority_Writer": "Mission: Write 2500+ word deep dives. Exhaustive detail.",
+    "Social_Distribution_Agent": "Mission: Repurpose content for LinkedIn, X, TikTok.",
+    "Conversion_Funnel_Architect": "Mission: Design lead magnets and bridge pages.",
+    "UX_UI_Content_Visualization_Agent": "Mission: Suggest visuals, charts, diagrams.",
+    "Sponsorship_Acquisition_Agent": "Mission: Identify brands and draft outreach."
+}
+def inject():
+    path = "DTF_EMPIRE/data_brick_core/data_models/agent_registry.py"
+    with open(path, "a") as f:
+        for k,v in TIER_2.items(): f.write(f'\nAGENTS["{k}"] = """{v}"""\n')
+    print("✅ Tier 2 Recruited.")
+if __name__ == "__main__": inject()
+""",
+
+    "DTF_Empire/ops/bulk_recruit_tier3.py": r"""import os
+TIER_3 = {
+    "Pipeline_Optimization_Agent": "Mission: Analyze job history for efficiency/cost bottlenecks.",
+    "System_Integration_Analyst_Agent": "Mission: Monitor JSON handoffs between agents.",
+    "Empire_Health_Monitoring_Agent": "Mission: Track API errors and content velocity."
+}
+def inject():
+    path = "DTF_EMPIRE/data_brick_core/data_models/agent_registry.py"
+    with open(path, "a") as f:
+        for k,v in TIER_3.items(): f.write(f'\nAGENTS["{k}"] = """{v}"""\n')
+    print("✅ Tier 3 Recruited.")
+if __name__ == "__main__": inject()
+""",
+
+    "DTF_Empire/ops/deploy_safety_governor.py": r"""import os
+GOV = "Mission: Protect system integrity. BLOCK high-risk actions (deletions)."
+def deploy():
+    path = "DTF_EMPIRE/data_brick_core/data_models/agent_registry.py"
+    with open(path, "a") as f: f.write(f'\nAGENTS["AI_Safety_Governor_Agent"] = """{GOV}"""\n')
+    print("✅ Governor Deployed.")
+if __name__ == "__main__": deploy()
+""",
+
+    "DTF_Empire/ops/deploy_recruit.py": r"""import os, google.generativeai as genai
+PROJECT_ROOT = "DTF_EMPIRE"
+REGISTRY_FILE = os.path.join(PROJECT_ROOT, "data_brick_core", "data_models", "agent_registry.py")
+def dtf_recruiter(name, key):
+    genai.configure(api_key=key)
+    return genai.GenerativeModel('gemini-1.5-flash').generate_content(f"Create agent persona for {name}").text
+def save_new_agent(name, persona):
+    with open(REGISTRY_FILE, "a") as f: f.write(f'\nAGENTS["{name}"] = """{persona}"""\n')
+if __name__ == "__main__":
+    k = input("Key: ")
+    n = input("Agent Name: ")
+    save_new_agent(n, dtf_recruiter(n, k))
+""",
+
+    # --- 3. EXECUTION ENGINES ---
+    "DTF_Empire/main_v2.py": r"""import os, sys, google.generativeai as genai
+sys.path.append(os.path.abspath("DTF_EMPIRE"))
+from core_infrastructure.event_bus_interface.event_bus import event_bus
+
+class UniversalAgent:
+    def __init__(self, name, key):
+        self.name = name
+        genai.configure(api_key=key)
+        self.model = genai.GenerativeModel('gemini-1.5-flash', system_instruction=f"You are {name}")
+    def run(self, ctx):
+        print(f"🤖 {self.name}: Working...")
+        try: return self.model.generate_content(f"INPUT: {ctx}").text
+        except: return "[Error]"
+
+def run_advanced_pipeline(key, topic):
+    print(f"🚀 DIAMOND PATH: {topic}")
+    event_bus.publish("JOB.STARTED", {"topic": topic})
+    
+    # 6-Step Workflow
+    res = UniversalAgent("Researcher", key).run(f"Specs for {topic}")
+    strat = UniversalAgent("SEO_Strategy_Architect", key).run(f"SEO Plan for {topic} using {res}")
+    draft = UniversalAgent("Long_Form_Authority_Writer", key).run(f"Write guide: {topic} using {strat}")
+    viz = UniversalAgent("UX_UI_Content_Visualization_Agent", key).run(f"Visuals for {draft[:500]}")
+    money = UniversalAgent("Affiliate_Revenue_Engineer", key).run(f"Monetize {draft}")
+    social = UniversalAgent("Social_Distribution_Agent", key).run(f"Socials for {money[:500]}")
+    
+    final = f

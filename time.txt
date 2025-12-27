@@ -1,0 +1,76 @@
+import time
+import os
+import random
+from sqlalchemy.orm import Session
+from database import SessionLocal, init_db
+from models import Product, ContentPost
+
+def seed_data(db: Session):
+    """Adds a sample product if the DB is empty so you see it working."""
+    if db.query(Product).count() == 0:
+        print("Seeding database with sample product...")
+        sample = Product(
+            name="Ridgid TS3650 Table Saw",
+            description="A heavy duty contractor saw for precise cuts.",
+            affiliate_link="http://dtf.empire/link/ridgid3650",
+            niche="Construction"
+        )
+        db.add(sample)
+        db.commit()
+
+def generate_marketing_copy(product_name, niche):
+    """
+    Placeholder for actual OpenAI/LLM call.
+    Replace with actual API request when ready.
+    """
+    templates = [
+        f"🔥 Check out the {product_name}! Perfect for {niche} lovers. Grab yours here: ",
+        f"Stop struggling with bad tools. The {product_name} is a game changer for {niche}. Link: ",
+        f"Daily Deal: {product_name}. Best in class for {niche}. Shop now: "
+    ]
+    return random.choice(templates)
+
+def run_automation():
+    db = SessionLocal()
+    
+    # 1. Find products that have 0 posts
+    # (In a real app, you might check date_last_posted)
+    products = db.query(Product).outerjoin(ContentPost).filter(ContentPost.id == None).all()
+
+    if not products:
+        print("No new products to process. Sleeping...")
+    
+    for product in products:
+        print(f"Processing product: {product.name}...")
+        
+        # 2. Generate Content
+        copy_text = generate_marketing_copy(product.name, product.niche)
+        full_content = f"{copy_text} {product.affiliate_link}"
+        
+        # 3. Save to DB
+        new_post = ContentPost(
+            product_id=product.id,
+            platform="Twitter",
+            generated_copy=full_content,
+            is_published=False
+        )
+        db.add(new_post)
+        db.commit()
+        print(f"✅ Generated Post: {full_content}")
+
+    db.close()
+
+if __name__ == "__main__":
+    print("Starting DTF Empire Content Engine...")
+    init_db()
+    
+    # Create initial session for seeding
+    session = SessionLocal()
+    seed_data(session)
+    session.close()
+
+    # Infinite Loop
+    while True:
+        run_automation()
+        # Sleep for 60 seconds before next check
+        time.sleep(60)

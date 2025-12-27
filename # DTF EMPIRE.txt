@@ -1,0 +1,22 @@
+# DTF EMPIRE V60 "WARLORD" - TECHNICAL BLUEPRINT
+
+## 1. INSTALLATION STEPS
+- [ ] Create directory: `DTF_Empire_V60_Warlord`
+- [ ] Install Python dependencies: `pip install streamlit pandas requests moviepy<2.0 imageio toml psutil`
+- [ ] Configure `.streamlit/secrets.toml` with OpenAI and Perplexity keys.
+- [ ] Run `DTF_Optimizer.bat` as Admin to prep Windows.
+
+## 2. PRODUCTION CYCLE
+1. **SCOUT:** System finds 3 trending tools.
+2. **FACTS:** System scrapes technical data (Specs/Price).
+3. **WRITE:** gpt-4o-mini drafts the 500-word field review.
+4. **RENDER:** DALL-E 3 creates the photo; TTS-1 creates the voiceover.
+5. **PUBLISH:** Content is sent to WordPress as a 'Draft' with featured media.
+
+## 3. RESOURCE MANAGEMENT
+- **Economy Mode:** Uses gpt-4o-mini for 95% cost reduction.
+- **Resource Guard:** Auto-pauses if CPU > 90% or RAM > 95%.
+- **Log Rotation:** Automatically clears old logs to save disk space.
+
+---
+"Design To Finish: We don't just build structures; we build systems."

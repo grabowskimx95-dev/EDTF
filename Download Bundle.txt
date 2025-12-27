@@ -1,0 +1,240 @@
+import os
+import zipfile
+import shutil
+from google.colab import files
+
+# ==========================================
+# 1. DEFINE FILE CONTENTS
+# ==========================================
+FILE_CONTENTS = {
+    "DTF_Empire/ops/initialize_empire.py": r"""import os
+def create_file(path, content):
+    with open(path, "w", encoding="utf-8") as f: f.write(content.strip())
+    print(f"   📄 Generated: {path}")
+
+STRUCTURE = {
+    "core_infrastructure": ["event_bus_interface", "retry_and_error_handler", "logging_and_metrics", "config_and_env_manager"],
+    "data_brick_core": ["data_models", "storage_layer", "tagging_and_clustering", "media_asset_store", "brick_query_interface"],
+    "strategic_oversight": ["overseer_agent", "predictive_strategy_engine", "j_curve_agent", "cfo_agent"],
+    "content_generation_pipeline": ["content_engine", "fact_checker_agent", "persona_engine", "vaporizer_engine", "linking_engine", "price_verification_service", "revenue_engine", "publish_and_archive"],
+    "outreach_and_monetization": ["affiliate_funnel_manager", "email_funnel_service", "cta_optimizer", "monetization_dashboard_connector"],
+    "analytics_feedback_loop": ["analytics_service", "rank_tracker_service", "performance_analyzer", "feedback_dispatcher"],
+    "media_processing": ["media_optimizer_engine", "reality_media_ingest", "fallback_media_handler"],
+    "content_lifecycle_maintenance": ["refresh_engine", "internal_link_optimizer", "price_update_scheduler", "decay_detector"],
+    "multi_channel_expansion": ["multi_channel_expansion_engine", "adaptive_title_engine", "snippet_engine"],
+    "dashboard_and_control_tower": ["dashboard_backend", "dashboard_frontend", "config_manager", "manual_override_interface"],
+    "domain_input_acquisition": ["keyword_intelligence_engine", "trendpulse_engine", "competitor_intel_crawler", "reality_ingest_engine"],
+    "ops": []
+}
+
+def build_empire():
+    print(f"🏗️  INITIALIZING DTF EMPIRE V80...")
+    if not os.path.exists("DTF_EMPIRE"): os.makedirs("DTF_EMPIRE")
+    for domain, modules in STRUCTURE.items():
+        d_path = os.path.join("DTF_EMPIRE", domain)
+        os.makedirs(d_path, exist_ok=True)
+        create_file(os.path.join(d_path, "__init__.py"), "")
+        for m in modules:
+            m_path = os.path.join(d_path, m)
+            os.makedirs(m_path, exist_ok=True)
+            create_file(os.path.join(m_path, "__init__.py"), "")
+    
+    # Core Files
+    create_file("DTF_EMPIRE/core_infrastructure/event_bus_interface/event_bus.py", "class EventBus:\n    def __init__(self): self.subs={}\n    def subscribe(self,e,h): self.subs.setdefault(e,[]).append(h)\n    def publish(self,e,p): [h(p) for h in self.subs.get(e,[])]; print(f'[BUS] {e}: {p}')\nevent_bus=EventBus()")
+    create_file("DTF_EMPIRE/data_brick_core/data_models/agent_registry.py", "AGENTS = {}\n")
+    create_file("DTF_EMPIRE/data_brick_core/storage_layer/applet_access_history.json", "[]")
+    print("\n✅ DTF EMPIRE BUILT SUCCESSFULLY.")
+
+if __name__ == "__main__": build_empire()
+""",
+
+    "DTF_Empire/ops/bulk_recruit_tier1.py": r"""import os
+TIER_1 = {
+    "Content_Operations_Director": "Mission: Oversee content production. Assign topics. Check quality.",
+    "SEO_Strategy_Architect": "Mission: Design topic clusters and URL structures.",
+    "Affiliate_Revenue_Engineer": "Mission: Maximize EPC/CTR. Optimize buttons and tables.",
+    "Product_Review_Specialist": "Mission: Generate No-BS reviews. 'Pros/Cons' tables.",
+    "Market_Trend_Sentinel": "Mission: Detect early signals. Report high-velocity keywords."
+}
+def inject():
+    path = "DTF_EMPIRE/data_brick_core/data_models/agent_registry.py"
+    with open(path, "a") as f:
+        for k,v in TIER_1.items(): f.write(f'\nAGENTS["{k}"] = """{v}"""\n')
+    print("✅ Tier 1 Recruited.")
+if __name__ == "__main__": inject()
+""",
+
+    "DTF_Empire/ops/bulk_recruit_tier2.py": r"""import os
+TIER_2 = {
+    "Long_Form_Authority_Writer": "Mission: Write 2500+ word deep dives. Exhaustive detail.",
+    "Social_Distribution_Agent": "Mission: Repurpose content for LinkedIn, X, TikTok.",
+    "Conversion_Funnel_Architect": "Mission: Design lead magnets and bridge pages.",
+    "UX_UI_Content_Visualization_Agent": "Mission: Suggest visuals, charts, diagrams.",
+    "Sponsorship_Acquisition_Agent": "Mission: Identify brands and draft outreach."
+}
+def inject():
+    path = "DTF_EMPIRE/data_brick_core/data_models/agent_registry.py"
+    with open(path, "a") as f:
+        for k,v in TIER_2.items(): f.write(f'\nAGENTS["{k}"] = """{v}"""\n')
+    print("✅ Tier 2 Recruited.")
+if __name__ == "__main__": inject()
+""",
+
+    "DTF_Empire/ops/bulk_recruit_tier3.py": r"""import os
+TIER_3 = {
+    "Pipeline_Optimization_Agent": "Mission: Analyze job history for efficiency/cost bottlenecks.",
+    "System_Integration_Analyst_Agent": "Mission: Monitor JSON handoffs between agents.",
+    "Empire_Health_Monitoring_Agent": "Mission: Track API errors and content velocity."
+}
+def inject():
+    path = "DTF_EMPIRE/data_brick_core/data_models/agent_registry.py"
+    with open(path, "a") as f:
+        for k,v in TIER_3.items(): f.write(f'\nAGENTS["{k}"] = """{v}"""\n')
+    print("✅ Tier 3 Recruited.")
+if __name__ == "__main__": inject()
+""",
+
+    "DTF_Empire/ops/deploy_safety_governor.py": r"""import os
+GOV = "Mission: Protect system integrity. BLOCK high-risk actions (deletions)."
+def deploy():
+    path = "DTF_EMPIRE/data_brick_core/data_models/agent_registry.py"
+    with open(path, "a") as f: f.write(f'\nAGENTS["AI_Safety_Governor_Agent"] = """{GOV}"""\n')
+    print("✅ Governor Deployed.")
+if __name__ == "__main__": deploy()
+""",
+
+    "DTF_Empire/main_v2.py": r"""import os, sys, google.generativeai as genai
+sys.path.append(os.path.abspath("DTF_EMPIRE"))
+from core_infrastructure.event_bus_interface.event_bus import event_bus
+
+class UniversalAgent:
+    def __init__(self, name, key):
+        self.name = name
+        genai.configure(api_key=key)
+        self.model = genai.GenerativeModel('gemini-1.5-flash', system_instruction=f"You are {name}")
+    def run(self, ctx):
+        print(f"🤖 {self.name}: Working...")
+        try: return self.model.generate_content(f"INPUT: {ctx}").text
+        except: return "[Error]"
+
+def run_advanced_pipeline(key, topic):
+    print(f"🚀 DIAMOND PATH: {topic}")
+    event_bus.publish("JOB.STARTED", {"topic": topic})
+    
+    # 6-Step Workflow
+    res = UniversalAgent("Researcher", key).run(f"Specs for {topic}")
+    strat = UniversalAgent("SEO_Strategy_Architect", key).run(f"SEO Plan for {topic} using {res}")
+    draft = UniversalAgent("Long_Form_Authority_Writer", key).run(f"Write guide: {topic} using {strat}")
+    viz = UniversalAgent("UX_UI_Content_Visualization_Agent", key).run(f"Visuals for {draft[:500]}")
+    money = UniversalAgent("Affiliate_Revenue_Engineer", key).run(f"Monetize {draft}")
+    social = UniversalAgent("Social_Distribution_Agent", key).run(f"Socials for {money[:500]}")
+    
+    final = f"# {topic}\n{money}\n---\n{viz}\n---\n{social}"
+    with open(f"output_{topic.replace(' ','_')}.md", "w") as f: f.write(final)
+    print("✅ JOB COMPLETE.")
+
+if __name__ == "__main__":
+    k = input("Key: ")
+    t = input("Topic: ")
+    run_advanced_pipeline(k, t)
+""",
+
+    "DTF_Empire/activate_autonomy.py": r"""import os, sys, time, json
+sys.path.append(os.path.abspath("DTF_EMPIRE"))
+from main_v2 import UniversalAgent, run_advanced_pipeline
+
+def loop(key):
+    print("♾️ AUTONOMY ACTIVE")
+    # Health Check
+    UniversalAgent("Empire_Health_Monitoring_Agent", key).run("Status Check")
+    
+    # Sentinel
+    sentinel = UniversalAgent("Market_Trend_Sentinel", key)
+    raw = sentinel.run("Identify 3 trends. JSON list.")
+    try: topics = json.loads(raw[raw.find('['):raw.find(']')+1])
+    except: topics = ["Trend A", "Trend B"]
+    
+    for t in topics:
+        run_advanced_pipeline(key, t)
+        time.sleep(5)
+    
+    UniversalAgent("Pipeline_Optimization_Agent", key).run("Review Batch")
+
+if __name__ == "__main__":
+    k = input("Key: ")
+    loop(k)
+""",
+
+    "DTF_Empire/ops/export_to_drive.py": r"""import os, shutil, datetime
+from google.colab import drive
+def sync():
+    try: drive.mount('/content/drive')
+    except: pass
+    src = "DTF_EMPIRE"
+    dest = "/content/drive/My Drive/DTF_Empire"
+    if os.path.exists(dest):
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        os.rename(dest, f"{dest}_ARCHIVE_{ts}")
+    shutil.copytree(src, dest)
+    print("✅ Synced to Drive.")
+if __name__ == "__main__": sync()
+""",
+
+    "DTF_Empire/docs/SYSTEM_INSTRUCTIONS.txt": r"""### DESIGNATION
+DTF_EMPIRE_ORCHESTRATOR_MAX_V80
+
+### CORE OBJECTIVES
+1. DOMINATE the niche with "No-BS", high-authority content.
+2. AUTOMATE the production pipeline (Research -> Social).
+3. SCALE to $100k/mo.
+
+### ORGANIZATIONAL HIERARCHY (CALLSIGNS)
+1. TREND_HUNTER_ZERO (Sentinel)
+2. CONTENT_DIRECTOR_ALPHA (Ops Director)
+3. VISUAL_SYNTH_X (UX/UI)
+4. ARCHITECT_ZERO (Health/Safety)
+
+### OPERATIONAL DIRECTIVES
+* Auto-Expansion: Recruit agents if gaps are found.
+* Diamond Path: Research -> Strategy -> Write -> Visuals -> Money -> Social.
+* DataBrick Source: Always use the Registry.
+"""
+}
+
+# ==========================================
+# 2. GENERATE & ZIP
+# ==========================================
+def create_bundle():
+    print("📦 PACKAGING DTF EMPIRE V80...")
+    
+    # 1. Write Files
+    for filepath, content in FILE_CONTENTS.items():
+        # Ensure dir exists
+        directory = os.path.dirname(filepath)
+        if not os.path.exists(directory) and directory != "":
+            os.makedirs(directory)
+        
+        # Write content
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(content.strip())
+        print(f"   📄 Packed: {filepath}")
+
+    # 2. Zip Directory
+    zip_name = "DTF_Empire_V80_Bundle.zip"
+    print(f"   🗜️  Zipping to {zip_name}...")
+    
+    with zipfile.ZipFile(zip_name, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        for root, dirs, files in os.walk("DTF_Empire"):
+            for file in files:
+                file_path = os.path.join(root, file)
+                zipf.write(file_path, os.path.relpath(file_path, "."))
+
+    # 3. Trigger Download
+    print(f"   🚀 Triggering Download...")
+    try:
+        files.download(zip_name)
+    except Exception as e:
+        print(f"   ⚠️ Auto-download failed (normal if local). File saved as: {os.path.abspath(zip_name)}")
+
+if __name__ == "__main__":
+    create_bundle()

@@ -1,0 +1,30 @@
+import os
+import time
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from models import Base
+
+# Construct connection string from .env
+DATABASE_URL = f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@{os.getenv('POSTGRES_HOST')}:{os.getenv('POSTGRES_PORT')}/{os.getenv('POSTGRES_DB')}"
+
+def get_engine():
+    # Retry logic to wait for Docker DB to spin up
+    retries = 5
+    while retries > 0:
+        try:
+            print(f"Connecting to database... ({retries} retries left)")
+            engine = create_engine(DATABASE_URL)
+            engine.connect()
+            print("Database connected successfully.")
+            return engine
+        except Exception as e:
+            print(f"Database connection failed: {e}")
+            retries -= 1
+            time.sleep(5)
+    raise Exception("Could not connect to the database after multiple attempts.")
+
+engine = get_engine()
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+def init_db():
+    Base.metadata.create_all(bind=engine)

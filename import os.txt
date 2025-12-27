@@ -1,0 +1,111 @@
+import os
+import sqlite3
+import sys
+from pathlib import Path
+
+# --- CONFIGURATION: FIND GOOGLE DRIVE ---
+def find_drive_path():
+    """
+    Attempts to locate the Google Drive root directory.
+    Works for Windows (G:/ or User/Google Drive) and Mac.
+    """
+    home = Path.home()
+    
+    # Common paths for Google Drive on different Operating Systems
+    possible_paths = [
+        Path("G:/My Drive"),                                          # Windows Google Drive for Desktop (Standard)
+        Path("G:/"),                                                  # Windows Google Drive (Root)
+        home / "Google Drive",                                        # Older Windows/Mac standard
+        home / "Library/CloudStorage/GoogleDrive-YourEmail/My Drive", # Newer Mac (Replace 'YourEmail' if needed, code tries generic first)
+        Path("/content/drive/MyDrive")                                # Google Colab
+    ]
+    
+    # Check specifically for Mac CloudStorage if the exact path isn't found above
+    if sys.platform == "darwin":
+        cloud_storage = home / "Library/CloudStorage"
+        if cloud_storage.exists():
+            for item in cloud_storage.iterdir():
+                if "GoogleDrive" in item.name and item.is_dir():
+                    if (item / "My Drive").exists():
+                        possible_paths.append(item / "My Drive")
+
+    for path in possible_paths:
+        if path.exists():
+            print(f"✅ Google Drive detected at: {path}")
+            return path
+            
+    # Fallback: If we can't find it, use the local folder where the script is running
+    print("⚠️ WARNING: Google Drive not found. Creating 'DTF_Empire_OS' locally.")
+    return Path.cwd()
+
+# --- INITIALIZATION SCRIPT ---
+def setup_empire():
+    drive_root = find_drive_path()
+    empire_root = drive_root / "DTF_Empire_OS"
+    
+    print(f"\n🚀 Initializing DTF Empire Architecture at: {empire_root}")
+    
+    # 1. Create Directory Structure (The Monorepo)
+    folders = [
+        "core",                  # Main logic (config, database.py)
+        "modules/inputs",        # Scrapers (Amazon, Home Depot)
+        "modules/processors",    # AI Writers, Image optimizers
+        "modules/seo_suite",     # The SEO Enhancer & Schema Builder
+        "modules/monetization",  # Affiliate Router & SaaS Injector
+        "modules/outputs",       # WordPress Uploader
+        "assets/images",         # Storage for raw product photos
+        "assets/processed",      # WebP converted images
+        "logs",                  # Error logs
+        "output_staging"         # Finished HTML files (Backup)
+    ]
+    
+    for folder in folders:
+        path = empire_root / folder
+        path.mkdir(parents=True, exist_ok=True)
+        print(f"   📂 Created: /{folder}")
+
+    # 2. Create the SQLite Database (The Brain)
+    db_path = empire_root / "dtf_database.sqlite"
+    
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    # TABLE 1: content_queue (The State Machine)
+    # This tracks every blog post from Idea -> Published
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS content_queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        target_keyword TEXT UNIQUE NOT NULL,  -- e.g. "DeWalt 20V Drill"
+        category TEXT,                        -- e.g. "Tools", "Consumables"
+        status TEXT DEFAULT 'PENDING',        -- PENDING, SCRAPED, DRAFTED, OPTIMIZED, PUBLISHED, ERROR
+        amazon_asin TEXT,
+        affiliate_link TEXT,
+        raw_data_json TEXT,                   -- Scraper dump
+        draft_html TEXT,                      -- AI Writer dump
+        final_html TEXT,                      -- SEO Enhanced dump
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    ''')
+    
+    # TABLE 2: silo_map (The Internal Linking Logic)
+    # This ensures new posts automatically link to old ones
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS silo_map (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        post_title TEXT,
+        url_slug TEXT UNIQUE,
+        primary_keyword TEXT,
+        silo_category TEXT                    -- e.g. "Silo A - Platforms"
+    )
+    ''')
+    
+    conn.commit()
+    conn.close()
+    
+    print(f"   🧠 Database initialized: {db_path}")
+    print("\n✅ SYSTEM READY.")
+    print(f"📂 Location: {empire_root}")
+
+if __name__ == "__main__":
+    setup_empire()

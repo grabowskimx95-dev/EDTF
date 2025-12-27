@@ -1,0 +1,442 @@
+"""
+DTF_SOVEREIGN_HYBRID_INSTALLER.py
+================================================================================
+VERSION: V101 (The Singularity Build)
+ARCHITECT: Keystone Designation
+DESCRIPTION: 
+    Merges V73 Reliability + V80 Event Architecture + Sentinel Autonomy.
+    Deploys the ultimate Content Domination System.
+================================================================================
+"""
+
+import os
+import sys
+import json
+
+# =========================
+# CONFIGURATION
+# =========================
+ROOT_DIR = "DTF_Sovereign_Hybrid"
+
+# =========================
+# 1. CORE INFRASTRUCTURE (The Nervous System)
+# =========================
+CODE_EVENT_BUS = r'''
+"""
+THE NERVOUS SYSTEM: Decoupled Event Bus (V80 Core)
+"""
+from collections import defaultdict
+from threading import RLock
+import logging
+
+class EventBus:
+    def __init__(self):
+        self._subscribers = defaultdict(list)
+        self._lock = RLock()
+
+    def subscribe(self, event_type, handler):
+        with self._lock:
+            self._subscribers[event_type].append(handler)
+
+    def publish(self, event_type, payload=None):
+        if payload is None: payload = {}
+        logging.info(f"⚡ EVENT: {event_type}")
+        with self._lock:
+            handlers = self._subscribers.get(event_type, [])
+        for handler in handlers:
+            try: handler(payload)
+            except Exception as e: logging.error(f"Event Handler Error: {e}")
+
+event_bus = EventBus()
+'''
+
+# =========================
+# 2. AGENT INTELLIGENCE (The Brains)
+# =========================
+CODE_REGISTRY = r'''
+"""
+AGENT PERSONA REGISTRY (Dynamic Loading)
+"""
+REGISTRY = {
+    "Researcher": """
+        ROLE: DTF Lead Technical Analyst.
+        MISSION: Retrieve absolute Ground Truth specs.
+        OUTPUT: Pure JSON data.
+        FIELDS REQUIRED: 
+        - Price (Current)
+        - Cure Time / RPM / Torque (Spec)
+        - Warranty
+        - Negative User Sentiment (Real reviews)
+    """,
+
+    "Writer": """
+        ROLE: DTF Senior Editor (Veteran Contractor Voice).
+        MISSION: Write high-authority review content.
+        CRITICAL RULE 1: You MUST start with a 'Quick Specs' Markdown Table comparing the subject to its top competitor.
+        CRITICAL RULE 2: Use bolding for key tools.
+        CRITICAL RULE 3: Tone is 'Jobsite Professional' - no fluff, no 'In conclusion'.
+        STRUCTURE:
+        1. The Bottom Line (Summary)
+        2. The Spec Fight (Comparison Table)
+        3. Field Test Results
+        4. Who is this for?
+    """,
+
+    "Scout": """
+        ROLE: Affiliate Revenue Officer.
+        MISSION: Inject commercial leverage.
+        ACTION: Convert product names to [AFFILIATE_LINK|Product_Name] placeholders.
+        ACTION: Identify accessory opportunities (e.g., 'Don't forget the T-25 bit').
+    """,
+
+    "Sentinel": """
+        ROLE: Market Watchtower.
+        MISSION: Identify high-velocity search trends in Construction/DIY.
+        CRITERIA: Rising volume, high ticket price, low competition.
+    """
+}
+'''
+
+CODE_UNIVERSAL_AGENT = r'''
+import json
+import requests
+from .registry import REGISTRY
+
+class UniversalAgent:
+    def __init__(self, agent_name, secrets):
+        self.name = agent_name
+        self.persona = REGISTRY.get(agent_name, "You are a helpful assistant.")
+        self.openai_key = secrets.get("openai_key")
+        self.pplx_key = secrets.get("pplx_key")
+
+    def run(self, task_input, model="gpt-4o"):
+        """
+        Switches brain based on agent type. 
+        Researcher -> Perplexity (Truth Layer).
+        Writer -> OpenAI (Creative Layer).
+        """
+        if self.name == "Researcher" and self.pplx_key:
+            return self._run_perplexity(task_input)
+        else:
+            return self._run_openai(task_input, model)
+
+    def _run_perplexity(self, query):
+        url = "https://api.perplexity.ai/chat/completions"
+        headers = {"Authorization": f"Bearer {self.pplx_key}", "Content-Type": "application/json"}
+        payload = {
+            "model": "llama-3.1-sonar-large-128k-online",
+            "messages": [
+                {"role": "system", "content": self.persona},
+                {"role": "user", "content": query}
+            ]
+        }
+        try:
+            r = requests.post(url, json=payload, headers=headers, timeout=60)
+            return r.json()["choices"][0]["message"]["content"]
+        except Exception as e:
+            return f"Perplexity Error: {e}"
+
+    def _run_openai(self, prompt, model):
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {"Authorization": f"Bearer {self.openai_key}", "Content-Type": "application/json"}
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": self.persona},
+                {"role": "user", "content": prompt}
+            ]
+        }
+        try:
+            r = requests.post(url, json=payload, headers=headers, timeout=60)
+            return r.json()["choices"][0]["message"]["content"]
+        except Exception as e:
+            return f"OpenAI Error: {e}"
+'''
+
+# =========================
+# 3. PRODUCTION ENGINE (The Muscle)
+# =========================
+CODE_ENGINE = r'''
+import time
+import logging
+import sys
+import os
+import sqlite3
+import json
+import base64
+import requests
+import toml
+from datetime import datetime
+
+# Import Internal Modules
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from core.event_bus import event_bus
+from agents.universal_agent import UniversalAgent
+
+# --- SETUP & CONFIG ---
+DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "empire.db")
+SECRETS_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "secrets.toml")
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+
+def load_secrets():
+    if os.path.exists(SECRETS_PATH): return toml.load(SECRETS_PATH)
+    return {}
+
+def get_db():
+    return sqlite3.connect(DB_PATH, timeout=30)
+
+def init_db():
+    conn = get_db()
+    conn.execute("""CREATE TABLE IF NOT EXISTS jobs (
+        id INTEGER PRIMARY KEY,
+        topic TEXT,
+        status TEXT,
+        blog_content TEXT,
+        link TEXT,
+        created_at TEXT
+    )""")
+    conn.commit()
+    conn.close()
+
+# --- WORKFLOW FUNCTIONS ---
+
+def workflow_research(topic, secrets):
+    logging.info(f"🔍 PHASE 1: RESEARCHING '{topic}'")
+    agent = UniversalAgent("Researcher", secrets)
+    # Force it to find the comparison data for the table
+    query = f"Research '{topic}'. FIND: Price, Key Specs, and top 2 Competitors. Get specific technical numbers."
+    data = agent.run(query)
+    return data
+
+def workflow_write(topic, research_data, secrets):
+    logging.info(f"✍️ PHASE 2: WRITING '{topic}'")
+    agent = UniversalAgent("Writer", secrets)
+    prompt = f"Topic: {topic}\n\nTechnical Facts: {research_data}\n\nTask: Write the Full Blog Post with the Comparison Table."
+    content = agent.run(prompt)
+    return content
+
+def workflow_publish(topic, content, link, secrets):
+    logging.info(f"🚀 PHASE 3: PUBLISHING '{topic}'")
+    wp_url = secrets.get("wp_url")
+    wp_user = secrets.get("wp_user")
+    wp_pass = secrets.get("wp_pass")
+    
+    if not (wp_url and wp_user and wp_pass):
+        logging.warning("⚠️ WP Credentials missing. Skipping publish.")
+        return False
+
+    auth = base64.b64encode(f"{wp_user}:{wp_pass}".encode()).decode()
+    headers = {"Authorization": f"Basic {auth}", "Content-Type": "application/json"}
+    
+    # Inject Link
+    final_html = content.replace("[AFFILIATE_LINK]", link)
+    
+    post = {
+        "title": f"{topic} [Review]", 
+        "content": final_html, 
+        "status": "draft" # Safety first
+    }
+    
+    try:
+        r = requests.post(f"{wp_url.rstrip('/')}/wp-json/wp/v2/posts", json=post, headers=headers, timeout=60)
+        if r.status_code in [200, 201]:
+            logging.info(f"✅ PUBLISHED: ID {r.json().get('id')}")
+            return True
+        else:
+            logging.error(f"❌ WP Error: {r.text}")
+            return False
+    except Exception as e:
+        logging.error(f"❌ Network Error: {e}")
+        return False
+
+# --- MAIN LOOP ---
+
+def run_engine():
+    logging.info("👑 DTF SOVEREIGN ENGINE ONLINE")
+    init_db()
+    
+    while True:
+        secrets = load_secrets()
+        if not secrets:
+            logging.warning("Waiting for secrets.toml configuration...")
+            time.sleep(30)
+            continue
+
+        # Check DB for Ready Jobs
+        conn = get_db()
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, topic, link FROM jobs WHERE status='Ready' LIMIT 1")
+        job = cursor.fetchone()
+        conn.close()
+
+        if job:
+            job_id, topic, link = job
+            logging.info(f"🔨 STARTING JOB: {topic}")
+            
+            # Update Status
+            conn = get_db()
+            conn.execute("UPDATE jobs SET status='Processing' WHERE id=?", (job_id,))
+            conn.commit()
+            conn.close()
+            
+            try:
+                # Execute Pipeline
+                facts = workflow_research(topic, secrets)
+                draft = workflow_write(topic, facts, secrets)
+                success = workflow_publish(topic, draft, link, secrets)
+                
+                final_status = "Published" if success else "Drafted_Local"
+                
+                # Save Result
+                conn = get_db()
+                conn.execute("UPDATE jobs SET status=?, blog_content=? WHERE id=?", (final_status, draft, job_id))
+                conn.commit()
+                conn.close()
+                
+            except Exception as e:
+                logging.error(f"❌ JOB FAILED: {e}")
+                conn = get_db()
+                conn.execute("UPDATE jobs SET status='Failed' WHERE id=?", (job_id,))
+                conn.commit()
+                conn.close()
+        
+        else:
+            logging.info("💤 Idle. Waiting for jobs...")
+            time.sleep(10)
+
+if __name__ == "__main__":
+    run_engine()
+'''
+
+# =========================
+# 4. DASHBOARD (The Control Tower)
+# =========================
+CODE_DASHBOARD = r'''
+import streamlit as st
+import sqlite3
+import pandas as pd
+import os
+import toml
+
+st.set_page_config(page_title="DTF Command V101", layout="wide", page_icon="🏰")
+DB_PATH = os.path.join("data", "empire.db")
+
+def get_db():
+    return sqlite3.connect(DB_PATH, timeout=30)
+
+st.title("🏰 DTF SOVEREIGN HYBRID // V101")
+
+# Sidebar
+st.sidebar.header("Operations")
+page = st.sidebar.radio("Go to", ["Pipeline", "Add Job", "Sentinel Settings"])
+
+if page == "Pipeline":
+    st.subheader("Production Pipeline")
+    if os.path.exists(DB_PATH):
+        conn = get_db()
+        df = pd.read_sql("SELECT * FROM jobs ORDER BY id DESC", conn)
+        conn.close()
+        st.dataframe(df)
+    else:
+        st.warning("Database initializing...")
+
+elif page == "Add Job":
+    st.subheader("Manual Job Injection")
+    with st.form("new_job"):
+        topic = st.text_input("Topic / Keyword")
+        link = st.text_input("Affiliate Link (Optional)")
+        submitted = st.form_submit_button("Queue Job")
+        
+        if submitted and topic:
+            conn = get_db()
+            conn.execute("INSERT INTO jobs (topic, link, status, created_at) VALUES (?, ?, 'Ready', datetime('now'))", (topic, link))
+            conn.commit()
+            conn.close()
+            st.success(f"Queued: {topic}")
+
+elif page == "Sentinel Settings":
+    st.subheader("Autonomy Configuration")
+    st.info("Sentinel Auto-Scout is currently: ACTIVE (Default)")
+'''
+
+# =========================
+# 5. SUPPORT & UTILS
+# =========================
+CODE_SECRETS = """# DTF EMPIRE SECRETS
+openai_key = ""  # For Writing (GPT-4)
+pplx_key = ""    # For Research (Truth Layer)
+wp_url = ""      # https://your-site.com
+wp_user = ""
+wp_pass = ""
+"""
+
+CODE_LAUNCHER = r'''@echo off
+TITLE DTF SOVEREIGN HYBRID
+ECHO ==========================================
+ECHO   DTF EMPIRE: HYBRID ARCHITECTURE V101
+ECHO ==========================================
+ECHO.
+ECHO [1] Starting Engine...
+start /B python engine/main.py
+ECHO [2] Starting Dashboard...
+streamlit run dashboard/app.py
+PAUSE
+'''
+
+# =========================
+# INSTALLATION LOGIC
+# =========================
+STRUCTURE = {
+    "core": {
+        "event_bus.py": CODE_EVENT_BUS,
+        "__init__.py": ""
+    },
+    "agents": {
+        "universal_agent.py": CODE_UNIVERSAL_AGENT,
+        "registry.py": CODE_REGISTRY,
+        "__init__.py": ""
+    },
+    "engine": {
+        "main.py": CODE_ENGINE,
+        "__init__.py": ""
+    },
+    "dashboard": {
+        "app.py": CODE_DASHBOARD
+    },
+    "config": {
+        "secrets.toml": CODE_SECRETS
+    },
+    "data": {},
+    "logs": {}
+}
+
+def create_structure(base, structure):
+    for name, content in structure.items():
+        path = os.path.join(base, name)
+        if isinstance(content, dict):
+            os.makedirs(path, exist_ok=True)
+            create_structure(path, content)
+        else:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(content.strip())
+            print(f"✅ Generated: {path}")
+
+def install():
+    print(f"🏰 BUILDING DTF SOVEREIGN HYBRID (V101)...")
+    if os.path.exists(ROOT_DIR):
+        print(f"⚠️  Updating existing directory: {ROOT_DIR}")
+    else:
+        os.makedirs(ROOT_DIR)
+    
+    create_structure(ROOT_DIR, STRUCTURE)
+    
+    with open(os.path.join(ROOT_DIR, "LAUNCH_EMPIRE.bat"), "w") as f:
+        f.write(CODE_LAUNCHER)
+
+    print("\n✅ DEPLOYMENT COMPLETE.")
+    print("👉 ACTION 1: Open 'DTF_Sovereign_Hybrid/config/secrets.toml' and add your keys.")
+    print("👉 ACTION 2: Run 'LAUNCH_EMPIRE.bat' to start the system.")
+
+if __name__ == "__main__":
+    install()

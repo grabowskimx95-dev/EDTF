@@ -1,0 +1,96 @@
+# FILE: crewai_orchestrator.py
+import os
+import sys
+import argparse
+from crewai import Agent, Task, Crew, Process
+from haystack.components.retrievers import InMemoryBM25Retriever
+from haystack.document_stores import InMemoryDocumentStore
+from haystack.pipelines import Pipeline
+from haystack.components.builders import PromptBuilder
+
+# --- 1. HAYSTACK RAG INITIALIZATION (AUTHORITY ENGINE) ---
+# Connect to DTF Data Bricks (manuals, specs, codes). Replace with your persistent DB (e.g., Chroma)
+document_store = InMemoryDocumentStore()
+# document_store.write_documents([... Your data brick documents here...])
+retriever = InMemoryBM25Retriever(document_store=document_store)
+
+# Create a Haystack Tool that the CrewAI Researcher can use
+def retrieve_fact_from_data_bricks(query: str):
+    """
+    Use this tool to search the proprietary DTF data bricks for technical specifications, 
+    safety codes, and verified product facts to ensure 100% content authority.
+    """
+    results = retriever.run(query=query)
+    # Reformat Haystack results for use by CrewAI LLM
+    return "\n".join([doc.content for doc in results['documents']])
+
+# --- 2. AGENT DEFINITIONS (PORTING UNIVERSAL AGENTS) ---
+
+# Role 1: THE RESEARCHER (Upgraded with RAG Tool)
+Researcher = Agent(
+    role='DTF Lead Fact Checker',
+    goal='Gather all technical specs, product details, and construction codes (IRC/IBC) for the target topic.',
+    backstory="The most rigorous contractor, providing only undisputed, data-validated facts.",
+    tools=[retrieve_fact_from_data_bricks], # INJECTING HAYSTACK
+    verbose=True,
+    allow_delegation=False
+)
+
+# Role 2: CONTENT ENGINEER (Lead Writer)
+Content_Engineer = Agent(
+    role='DTF Content Engineer (Lead Writer)',
+    goal='Write a highly authoritative, SEO-optimized, contractor-focused guide or review.',
+    backstory="Writes with a gritty, professional, 'blue-collar smart' voice, using H1/H2 headers.",
+    verbose=True,
+    allow_delegation=True
+)
+
+# Role 3: REVENUE OPS AGENT (Affiliate Scout - Refined)
+Revenue_Ops_Agent = Agent(
+    role='DTF Revenue Operations Agent',
+    goal='Maximize revenue by inserting dynamic [AFFILIATE LINK:...] placeholders and creating a "Jobsite Supply List" table.',
+    backstory="You are the ultimate monetization expert. You must not change the content's tone.",
+    verbose=True,
+    allow_delegation=False
+)
+
+# --- 3. TASK DEFINITIONS (THE PIPELINE) ---
+
+task_research = Task(
+    description='Find 10-15 key, non-negotiable facts about the tool/topic using the Haystack RAG tool.',
+    agent=Researcher,
+    expected_output="A bulleted list of raw facts and specs."
+)
+
+task_content = Task(
+    description="Write the full, high-authority article draft using the Researcher's facts.",
+    agent=Content_Engineer,
+    expected_output="Full markdown article with H1/H2 headers, ready for monetization."
+)
+
+task_monetize = Task(
+    description=f"Review the draft. Inject dynamic placeholders in the format [AFFILIATE LINK: Product Name] for all consumables and high-ticket tools. The output must contain ONLY the final article text with links.",
+    agent=Revenue_Ops_Agent,
+    expected_output="Final, monetized article text. Save output to 'content_monetized.md'."
+)
+
+# --- 4. EXECUTION ---
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--topic", required=True, help="The content topic from Kestra's Sentinel.")
+    args = parser.parse_args()
+
+    # The Crew is launched with the topic as the input to the first task
+    dtf_crew = Crew(
+        agents=[Researcher, Content_Engineer, Revenue_Ops_Agent],
+        tasks=[task_research, task_content, task_monetize],
+        process=Process.sequential,
+        verbose=2
+    )
+
+    final_result = dtf_crew.kickoff(inputs={'topic': args.topic})
+
+    # Output the result for Kestra to pick up in the next step
+    with open("content_monetized.md", "w") as f:
+        f.write(final_result)
+    print(f"✅ Successfully created and monetized content for: {args.topic}")

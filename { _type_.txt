@@ -1,0 +1,67 @@
+{
+  "type": "object",
+  "properties": {
+    "meta_data": {
+      "type": "object",
+      "properties": {
+        "target_keyword": { "type": "string", "description": "e.g., Best Cordless Framer for Cold Weather" },
+        "seo_title": { "type": "string", "description": "Click-worthy H1 title, e.g., 'Milwaukee vs. DeWalt: Who Wins?'" },
+        "meta_description": { "type": "string", "description": "160 characters max, includes CTA" }
+      }
+    },
+    "intro_hook": {
+      "type": "string",
+      "description": "2-3 sentences. Identify the specific problem (e.g., 'Sick of lugging a compressor?'). No fluff."
+    },
+    "comparison_table": {
+      "type": "array",
+      "description": "The 'Killer Feature'. strictly comparing 2-3 top models.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "model_name": { "type": "string" },
+          "key_spec_1": { "type": "string", "description": "e.g., Torque: 1200 in-lbs" },
+          "key_spec_2": { "type": "string", "description": "e.g., Weight: 3.4 lbs" },
+          "price_point": { "type": "string", "description": "e.g., $$$ or Approx $199" },
+          "rating": { "type": "number", "description": "Scale 1-5" }
+        }
+      }
+    },
+    "deep_dive_analysis": {
+      "type": "object",
+      "properties": {
+        "performance_breakdown": { "type": "string", "description": "Analysis of power, speed, run-time based on manual specs." },
+        "ergonomics_handling": { "type": "string", "description": "Weight, grip, balance analysis." },
+        "the_bs_proof_section": {
+          "type": "string",
+          "description": "CRITICAL: Summarize actual user complaints from forums. e.g., 'Users report the belt hook bends easily.'"
+        }
+      }
+    },
+    "pros_cons": {
+      "type": "object",
+      "properties": {
+        "pros": { "type": "array", "items": { "type": "string" } },
+        "cons": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "call_to_action_module": {
+      "type": "array",
+      "description": "Multi-Retailer Buttons for 'Arbitrage'.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "retailer_name": { "type": "string", "enum": ["Home Depot", "Acme Tools", "Amazon", "EquipmentShare"] },
+          "button_text": { "type": "string", "description": "e.g., 'Check Price at Home Depot'" },
+          "affiliate_link": { "type": "string" },
+          "value_prop": { "type": "string", "description": "e.g., 'Best for Curbside Pickup' or 'Best Pro Price'" }
+        }
+      }
+    },
+    "final_verdict": {
+      "type": "string",
+      "description": "Clear recommendation. Who should buy this? Who should avoid it?"
+    }
+  },
+  "required": ["meta_data", "comparison_table", "deep_dive_analysis", "call_to_action_module"]
+}

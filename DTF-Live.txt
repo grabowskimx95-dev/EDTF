@@ -1,0 +1,202 @@
+"""
+DTF SINGULARITY V72 - VERIFIED TRACKING EDITION
+-----------------------------------------------
+TRACKING ID: dtfcontractin-20 (HARDCODED)
+STATUS: ACTIVE & MONETIZED.
+"""
+
+import json
+import logging
+import os
+import re
+import sqlite3
+import time
+import sys
+import base64
+import asyncio
+import requests
+import toml
+from datetime import date, datetime
+
+# --- CONFIGURATION ---
+PROJECT_DIR = "DTF_Command_HQ_V72"
+BRAND_NAME = "Design To Finish Contracting"
+BRAND_URL = "https://www.design-to-finish.com"
+DB_FILE = "empire.db"
+SECRETS_PATH = os.path.join(".streamlit", "secrets.toml")
+LOG_FILE = os.path.join("logs", "dtf_revenue.log")
+
+# ✅ VERIFIED ID FROM SCREENSHOT 4027.png
+AMAZON_TAG = "dtfcontractin-20"
+
+os.makedirs("logs", exist_ok=True)
+os.makedirs("packets", exist_ok=True)
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", 
+                    handlers=[logging.FileHandler(LOG_FILE, encoding="utf-8"), logging.StreamHandler(sys.stdout)])
+
+# --- DEPENDENCIES ---
+try:
+    from pytrends.request import TrendReq
+except ImportError:
+    logging.warning("⚠️ Pytrends missing. Run 'pip install pytrends'")
+
+# ==============================================================================
+# CLASS 1: DATA LAYER
+# ==============================================================================
+class DatabaseManager:
+    def get_conn(self): return sqlite3.connect(DB_FILE, timeout=30)
+    
+    def init_db(self):
+        with self.get_conn() as conn:
+            conn.execute("PRAGMA journal_mode=WAL;")
+            conn.execute("""CREATE TABLE IF NOT EXISTS posts (
+                id INTEGER PRIMARY KEY, name TEXT UNIQUE, niche TEXT, 
+                status TEXT, affiliate_link TEXT, image_url TEXT, 
+                social_json TEXT, created_at TEXT
+            )""")
+
+# ==============================================================================
+# CLASS 2: UNIVERSAL LINK ENGINE (Now with dtfcontractin-20)
+# ==============================================================================
+class UniversalLinkEngine:
+    def __init__(self): 
+        self.trend_agent = TrendReq(hl='en-US', tz=360) if 'TrendReq' in globals() else None
+
+    def hunt_trends(self):
+        """
+        Hunts for tools people are searching for right now.
+        """
+        if not self.trend_agent: return []
+        
+        # High-Value Tool Keywords
+        seeds = ["cordless drill", "jobsite radio", "laser level", "work boots", "impact driver"]
+        opportunities = []
+        
+        try:
+            self.trend_agent.build_payload(kw_list=seeds, timeframe='now 7-d', geo='US') 
+            data = self.trend_agent.interest_over_time()
+            if not data.empty:
+                top = data.mean().idxmax()
+                if data[top].mean() > 25: # Lower threshold to catch more trends
+                    opportunities.append(top)
+        except: pass
+        return opportunities
+
+    def generate_universal_link(self, product_name):
+        """
+        The Money Maker. Attaches 'dtfcontractin-20' to every search.
+        """
+        clean = re.sub(r'[^a-zA-Z0-9 ]', '', product_name).replace(' ', '+')
+        # This link format is 100% compliant with the warning in Image 3600.png
+        link = f"https://www.amazon.com/s?k={clean}&tag={AMAZON_TAG}"
+        return link
+
+# ==============================================================================
+# CLASS 3: BRANDED CONTENT FACTORY
+# ==============================================================================
+class ContentFactory:
+    def __init__(self, secrets): self.key = secrets.get("openai_key")
+
+    def produce_asset(self, product, aff_link):
+        prompt = f"""
+        Role: Lead Foreman for {BRAND_NAME}.
+        Task: Write a 'Best of 2025' Review for: {product}.
+        
+        GOAL: drive traffic to this link: {aff_link}
+        
+        STRUCTURE:
+        1. **Contractor's Take**: "Here at {BRAND_NAME}, we need tools that last..."
+        2. **The Grind**: Describe using it on a real jobsite.
+        3. **Verdict**: "For the price, you can't beat it."
+        4. **CTA**: Button "Check Current Price on Amazon".
+        
+        SEO: Schema.org/Review, HTML5.
+        SOCIALS: LinkedIn (Professional), Facebook (Casual).
+        
+        Return JSON.
+        """
+        r = requests.post("https://api.openai.com/v1/chat/completions", 
+            json={"model": "gpt-4o", "messages": [{"role": "system", "content": prompt}], "response_format": {"type": "json_object"}}, 
+            headers={"Authorization": f"Bearer {self.key}"})
+        return json.loads(r.json()["choices"][0]["message"]["content"])
+
+    def create_media(self, product, folder):
+        try:
+            prompt = f"Professional photo of {product} on construction site, {BRAND_NAME} aesthetic, 4k."
+            r = requests.post("https://api.openai.com/v1/images/generations", 
+                json={"model": "dall-e-3", "prompt": prompt, "size": "1024x1024"}, 
+                headers={"Authorization": f"Bearer {self.key}"})
+            img_path = os.path.join(folder, "feat.jpg")
+            with open(img_path, "wb") as f: f.write(requests.get(r.json()["data"][0]["url"]).content)
+            return img_path
+        except: return None
+
+# ==============================================================================
+# CLASS 4: PUBLISHER
+# ==============================================================================
+class Publisher:
+    def __init__(self, secrets): self.secrets = secrets
+    
+    def publish(self, product, html, img_path):
+        user, pw, url = self.secrets.get("wp_user"), self.secrets.get("wp_pass"), self.secrets.get("wp_url")
+        creds = base64.b64encode(f"{user}:{pw}".encode()).decode()
+        
+        media_id = None
+        if img_path:
+            r = requests.post(f"{url}/wp-json/wp/v2/media", headers={"Authorization": f"Basic {creds}", "Content-Type": "image/jpeg", "Content-Disposition": "attachment; filename=feat.jpg"}, data=open(img_path, "rb").read())
+            if r.status_code == 201: media_id = r.json().get("id")
+
+        requests.post(f"{url}/wp-json/wp/v2/posts", 
+                      json={"title": f"{product.title()} Review (2025)", "content": html, "status": "publish", "featured_media": media_id}, 
+                      headers={"Authorization": f"Basic {creds}"})
+
+# ==============================================================================
+# MAIN AUTONOMOUS LOOP
+# ==============================================================================
+async def main():
+    db = DatabaseManager(); db.init_db()
+    logging.info(f"=== {BRAND_NAME} V72: TRACKING ACTIVE ({AMAZON_TAG}) ===")
+    
+    engine = UniversalLinkEngine()
+    
+    while True:
+        secrets = toml.load(SECRETS_PATH) if os.path.exists(SECRETS_PATH) else {}
+        if not secrets.get("openai_key"): time.sleep(60); continue
+        
+        trends = engine.hunt_trends()
+        
+        for product in trends:
+            with db.get_conn() as conn:
+                exists = conn.execute("SELECT id FROM posts WHERE name=?", (product,)).fetchone()
+            
+            if not exists:
+                logging.info(f"🚀 Detected Opportunity: {product}")
+                
+                # 1. MONETIZE (Using dtfcontractin-20)
+                link = engine.generate_universal_link(product)
+                
+                # 2. PRODUCE
+                factory = ContentFactory(secrets)
+                assets = factory.produce_asset(product, link)
+                
+                # 3. VISUALIZE
+                folder = os.path.join("packets", f"{date.today()}_{product.replace(' ','')}")
+                os.makedirs(folder, exist_ok=True)
+                img = factory.create_media(product, folder)
+                
+                # 4. PUBLISH
+                pub = Publisher(secrets)
+                pub.publish(product, assets["blog_html"], img)
+                
+                # 5. LOG
+                with db.get_conn() as conn:
+                    conn.execute("INSERT INTO posts (name, niche, status, affiliate_link, image_url, created_at) VALUES (?, ?, 'Published', ?, ?, ?)",
+                                 (product, 'Level 5 Auto', link, str(img), datetime.utcnow().isoformat()))
+                
+                logging.info(f"💰 LINK LIVE: {link}")
+                
+        time.sleep(1200)
+
+if __name__ == "__main__":
+    asyncio.run(main())

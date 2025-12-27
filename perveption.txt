@@ -1,0 +1,81 @@
+import time
+import json
+# In a real deployment, we would import official Google Drive and OpenAI libraries
+# from googleapiclient.discovery import build
+# from openai import OpenAI
+
+class VisionAgent:
+    def __init__(self, watch_folder_id, cms_api_url):
+        self.watch_folder_id = watch_folder_id
+        self.cms_api_url = cms_api_url
+        print(f"DTF Vision Agent initialized. Watching folder: {watch_folder_id}")
+
+    def monitor_folder(self):
+        """
+        Polls the 'DTF Uploads' folder for new raw files from your phone.
+        [span_3](start_span)Simulates the 'Perception Layer'[span_3](end_span).
+        """
+        print("Scanning for new jobsite photos...")
+        # Mocking a detected file for this demonstration
+        new_file_detected = {
+            "file_name": "jobsite_martinez_hammer.jpg",
+            "file_url": "https://drive.google.com/thumbnail/123xyz",
+            "upload_timestamp": time.time()
+        }
+        
+        if new_file_detected:
+            print(f"New Asset Detected: {new_file_detected['file_name']}")
+            self.analyze_image(new_file_detected)
+
+    def analyze_image(self, file_data):
+        """
+        The 'Brain' of the operation. Uses Vision API to extract context.
+        [span_4](start_span)This replaces the need for you to write captions manually[span_4](end_span).
+        """
+        print("Sending to Vision Model (GPT-4o) for analysis...")
+        
+        # We prompt the AI to look for specific 'Construction' context
+        prompt = """
+        Analyze this jobsite photo. Return a JSON object with:
+        1. tool_identified: (Brand and likely Model)
+        2. action_context: (e.g., 'Framing a 2x6 wall', 'Cutting PT lumber')
+        3. wear_analysis: (Is the tool new, used, or abused?)
+        4. caption_hook: A catchy caption for a contractor audience.
+        """
+        
+        # MOCK RESPONSE (What GPT-4o would actually return)
+        ai_analysis = {
+            "tool_identified": "Martinez M1 Titanium Hammer",
+            "action_context": "Driving 16d sinkers into treated lumber",
+            "wear_analysis": "Heavy wear on the face, replaceable grip shows usage.",
+            "caption_hook": "The face is beat up, but the elbow feels fine. 6 months of daily framing with the M1."
+        }
+        
+        self.push_to_cms(file_data, ai_analysis)
+
+    def push_to_cms(self, file_data, analysis):
+        """
+        Formats the data into our strict JSON Schema and pushes to Strapi.
+        [span_5](start_span)The Writer Agent will pick this up to build the full article[span_5](end_span).
+        """
+        payload = {
+            "status": "draft_asset",
+            "image_url": file_data['file_url'],
+            "jobsite_proof_metadata": {
+                "tool": analysis['tool_identified'],
+                "condition": analysis['wear_analysis'],
+                "location_context": "Belleville, IL Jobsite", # Auto-injected from your phone metadata
+                "generated_caption": analysis['caption_hook']
+            },
+            # This triggers the 'Trade Matrix' logic in the schema we built earlier
+            "suggested_tags": ["Framing", "High-Ticket", "Titanium"] 
+        }
+        
+        # requests.post(self.cms_api_url, json=payload)
+        print(f"SUCCESS: Uploaded '{analysis['tool_identified']}' to CMS.")
+        print(f"Ready for Writer Agent to insert into 'Trade Selector Matrix'.")
+
+# --- EXECUTION ---
+# [span_6](start_span)This runs on your laptop or AWS Lambda server 24/7[span_6](end_span).
+agent = VisionAgent(watch_folder_id="DTF_UPLOADS", cms_api_url="https://api.dtfempire.com/upload")
+agent.monitor_folder()

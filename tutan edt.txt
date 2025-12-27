@@ -1,0 +1,511 @@
+"""
+EMPIRE INSTALLER V53 (TITAN EDITION)
+------------------------------------
+Builds the complete DTF Command HQ ecosystem.
+Merges V52 stability with V36 speed and 'Blue Collar' data seeding.
+"""
+
+import os
+import csv
+from textwrap import dedent
+
+PROJECT_DIR = "DTF_Empire_V53"
+
+# ==========================================
+# 1. ENGINE CODE (Optimized V53)
+# ==========================================
+ENGINE_CODE = r'''import base64
+import json
+import logging
+import os
+import re
+import shutil
+import sqlite3
+import time
+import csv
+from datetime import date, datetime
+
+import requests
+import toml
+
+# Try importing MoviePy, but don't crash if missing
+try:
+    from moviepy.editor import AudioFileClip, ColorClip, CompositeVideoClip, ImageClip
+    MOVIEPY_AVAILABLE = True
+except ImportError:
+    MOVIEPY_AVAILABLE = False
+
+try:
+    import psutil
+except ImportError:
+    psutil = None
+
+# --- CONFIG ---
+DB_FILE = "empire.db"
+SECRETS_PATH = os.path.join(".streamlit", "secrets.toml")
+LOG_DIR = "logs"
+LOG_FILE = os.path.join(LOG_DIR, "empire_activity.log")
+PACKET_ROOT = "packets"
+BACKUP_DIR = "backups"
+SEED_FILE = "blue_collar_seed.csv"
+
+os.makedirs(LOG_DIR, exist_ok=True)
+os.makedirs(PACKET_ROOT, exist_ok=True)
+os.makedirs(BACKUP_DIR, exist_ok=True)
+
+FFMPEG_AVAILABLE = shutil.which("ffmpeg") is not None
+
+# --- LOGGING ---
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_FILE, encoding="utf-8"),
+        logging.StreamHandler()
+    ]
+)
+
+# --- DB HANDLERS ---
+def get_conn():
+    return sqlite3.connect(DB_FILE, timeout=30)
+
+def init_db():
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("""CREATE TABLE IF NOT EXISTS posts (
+        id INTEGER PRIMARY KEY,
+        name TEXT UNIQUE,
+        niche TEXT,
+        link TEXT,
+        status TEXT,
+        app_url TEXT,
+        image_url TEXT,
+        video_path TEXT,
+        created_at TEXT
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS run_log (
+        id INTEGER PRIMARY KEY,
+        run_date TEXT,
+        item_name TEXT
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS error_log (
+        id INTEGER PRIMARY KEY,
+        item_name TEXT,
+        stage TEXT,
+        message TEXT,
+        created_at TEXT
+    )""")
+    
+    # Defaults
+    c.execute("INSERT OR IGNORE INTO settings (key,value) VALUES ('system_status','RUNNING')")
+    defaults = {"throttle_cpu": "75", "pause_cpu": "90", "throttle_ram": "80", "pause_ram": "95"}
+    for k, v in defaults.items():
+        c.execute("INSERT OR IGNORE INTO settings (key,value) VALUES (?,?)", (k, v))
+        
+    conn.commit()
+    conn.close()
+
+def log_error(item, stage, msg):
+    msg = (msg or "")[:600]
+    logging.error(f"ERROR [{stage}] {item}: {msg}")
+    try:
+        conn = get_conn()
+        c = conn.cursor()
+        c.execute("INSERT INTO error_log(item_name,stage,message,created_at) VALUES (?,?,?,?)",
+                  (item, stage, msg, datetime.utcnow().isoformat()))
+        conn.commit()
+        conn.close()
+    except:
+        pass
+
+# --- SEEDING LOGIC (V53 New Feature) ---
+def seed_database():
+    """Loads the CSV seed file if the DB is empty."""
+    if not os.path.exists(SEED_FILE):
+        return
+
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM posts")
+    if c.fetchone()[0] > 0:
+        conn.close()
+        return # DB already populated
+
+    logging.info("🌱 Seeding database from CSV...")
+    try:
+        with open(SEED_FILE, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            count = 0
+            for row in reader:
+                name = row.get("Tool Name", "").strip()
+                niche = row.get("Category", "General").strip()
+                # We put the "Affiliate/URL Note" into app_url temporarily so the user sees it
+                note = row.get("Affiliate/URL Note", "")
+                
+                if name:
+                    c.execute("""INSERT OR IGNORE INTO posts (name, niche, link, status, app_url, created_at)
+                                 VALUES (?, ?, '', 'Pending', ?, ?)""",
+                              (name, niche, note, datetime.utcnow().isoformat()))
+                    count += 1
+            conn.commit()
+            logging.info(f"🌱 Seeded {count} items.")
+    except Exception as e:
+        log_error("SYSTEM", "seeding", str(e))
+    finally:
+        conn.close()
+
+# --- HELPER FUNCTIONS ---
+def load_secrets():
+    if not os.path.exists(SECRETS_PATH): return {}
+    return toml.load(SECRETS_PATH)
+
+def check_budget(limit):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM run_log WHERE run_date=?", (str(date.today()),))
+    count = c.fetchone()[0]
+    conn.close()
+    return count < limit
+
+def get_ready_item():
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT id,name,niche,link,status,app_url FROM posts WHERE status='Ready' LIMIT 1")
+    row = c.fetchone()
+    conn.close()
+    return row
+
+def update_status(name, status, img="", vid=""):
+    conn = get_conn()
+    c = conn.cursor()
+    if img or vid:
+        c.execute("UPDATE posts SET status=?, image_url=?, video_path=? WHERE name=?", (status, img, vid, name))
+    else:
+        c.execute("UPDATE posts SET status=? WHERE name=?", (status, name))
+    conn.commit()
+    conn.close()
+
+def log_run_complete(name):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("INSERT INTO run_log (run_date,item_name) VALUES (?,?)", (str(date.today()), name))
+    conn.commit()
+    conn.close()
+
+# --- CORE PRODUCTION FUNCTIONS ---
+def safe_post(url, payload, headers, timeout=60):
+    try:
+        r = requests.post(url, json=payload, headers=headers, timeout=timeout)
+        if r.status_code != 200: return None
+        return r
+    except: return None
+
+def get_facts(product, key):
+    if not key: return "General tool info."
+    r = safe_post("https://api.perplexity.ai/chat/completions", {
+        "model": "llama-3.1-sonar-large-128k-online",
+        "messages": [{"role":"system","content":"List 5 technical specs, pros, cons, and use cases for contractors."},
+                     {"role":"user","content":f"Specs for {product}"}]
+    }, {"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+    return r.json()["choices"][0]["message"]["content"] if r else "General info."
+
+def write_content(product, facts, key):
+    if not key: return None
+    sys_prompt = f"""
+    You are 'DTF Command', a veteran St. Louis contractor.
+    Write a review for {product} using these facts: {facts}.
+    Output JSON: {{"blog_html": "...", "video_script": "..."}}
+    Blog should be 800 words, HTML format, blue-collar tone.
+    Script: 30sec narrator text.
+    """
+    r = safe_post("https://api.openai.com/v1/chat/completions", {
+        "model": "gpt-4o",
+        "messages": [{"role":"system","content":sys_prompt}],
+        "response_format": {"type": "json_object"}
+    }, {"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+    return r.json()["choices"][0]["message"]["content"] if r else None
+
+def produce_media(product, script, key, folder):
+    # Image
+    img_path = os.path.join(folder, f"{product.replace(' ','_')}.jpg")
+    r_img = safe_post("https://api.openai.com/v1/images/generations", {
+        "model": "dall-e-3", "prompt": f"Contractor using {product} on jobsite, cinematic.", "size": "1024x1024"
+    }, {"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+    
+    if r_img:
+        with open(img_path, "wb") as f:
+            f.write(requests.get(r_img.json()["data"][0]["url"]).content)
+    else:
+        img_path = None
+
+    # Video (Optional)
+    vid_path = None
+    if MOVIEPY_AVAILABLE and FFMPEG_AVAILABLE and img_path:
+        try:
+            aud_path = img_path.replace(".jpg", ".mp3")
+            r_aud = safe_post("https://api.openai.com/v1/audio/speech", {
+                "model": "tts-1", "voice": "onyx", "input": script
+            }, {"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+            if r_aud:
+                with open(aud_path, "wb") as f: f.write(r_aud.content)
+                
+                # Render
+                ac = AudioFileClip(aud_path)
+                ic = ImageClip(img_path).set_duration(ac.duration + 0.5).resize(height=1920)
+                ic = ic.crop(x1=ic.w/2-540, width=1080, height=1920)
+                vid_path = img_path.replace(".jpg", ".mp4")
+                CompositeVideoClip([ic]).set_audio(ac).write_videofile(vid_path, fps=24, verbose=False, logger=None)
+        except Exception as e:
+            log_error(product, "media_video", f"Skipping video: {e}")
+            vid_path = None
+            
+    return img_path, vid_path
+
+def publish_wp(name, html, link, img, secrets):
+    wp_url = secrets.get("wp_url","").rstrip("/")
+    auth = base64.b64encode(f"{secrets.get('wp_user')}:{secrets.get('wp_pass')}".encode()).decode()
+    
+    # Smart Link
+    enc_link = base64.b64encode(link.encode()).decode()
+    smart_link = f"{wp_url}/?df_track={name.replace(' ','_')}&dest={enc_link}"
+    
+    html += f"<div style='text-align:center'><a href='{smart_link}' style='background:red;color:white;padding:10px;border-radius:5px;text-decoration:none'>CHECK PRICE</a></div>"
+    
+    # Media Upload
+    media_id = None
+    if img and os.path.exists(img):
+        headers = {"Authorization":f"Basic {auth}","Content-Type":"image/jpeg","Content-Disposition":"attachment; filename=feat.jpg"}
+        r = requests.post(f"{wp_url}/wp-json/wp/v2/media", data=open(img,"rb").read(), headers=headers)
+        if r.status_code==201: media_id = r.json().get("id")
+
+    # Post
+    post = {"title":f"{name} Review", "content":html, "status":"draft"}
+    if media_id: post["featured_media"] = media_id
+    requests.post(f"{wp_url}/wp-json/wp/v2/posts", json=post, headers={"Authorization":f"Basic {auth}", "Content-Type":"application/json"})
+
+# --- MAIN LOOP ---
+def run_loop():
+    init_db()
+    seed_database() # Auto-load CSV if needed
+    
+    while True:
+        secrets = load_secrets()
+        if not secrets: time.sleep(30); continue
+        
+        # 1. Resource Guard
+        if psutil:
+            cpu = psutil.cpu_percent(0.1)
+            if cpu > float(secrets.get("pause_cpu", 90)):
+                time.sleep(60); continue
+        
+        # 2. Budget
+        if not check_budget(int(secrets.get("daily_run_limit", 5))):
+            time.sleep(3600); continue
+            
+        # 3. Job Check
+        item = get_ready_item()
+        if item:
+            _id, name, niche, link, status, app = item
+            logging.info(f"🚀 Starting: {name}")
+            try:
+                facts = get_facts(name, secrets.get("pplx_key"))
+                content = json.loads(write_content(name, facts, secrets.get("openai_key")))
+                
+                folder = os.path.join(PACKET_ROOT, date.today().isoformat())
+                os.makedirs(folder, exist_ok=True)
+                
+                img, vid = produce_media(name, content["video_script"], secrets.get("openai_key"), folder)
+                publish_wp(name, content["blog_html"], link, img, secrets)
+                
+                update_status(name, "Published", img, vid)
+                log_run_complete(name)
+            except Exception as e:
+                log_error(name, "production", str(e))
+                update_status(name, "Failed")
+            continue
+        
+        # 4. Scout (If empty)
+        # (Scouting logic simplified for V53 to rely on Seeding first, then auto-scout)
+        time.sleep(60)
+
+if __name__ == "__main__":
+    run_loop()
+'''
+
+# ==========================================
+# 2. DASHBOARD CODE (Streamlit UI)
+# ==========================================
+DASHBOARD_CODE = r'''import streamlit as st
+import pandas as pd
+import sqlite3
+import os
+import toml
+from datetime import date
+
+st.set_page_config(page_title="DTF Command V53", page_icon="🏗️", layout="wide")
+
+DB_FILE = "empire.db"
+conn = sqlite3.connect(DB_FILE)
+
+# --- SIDEBAR ---
+with st.sidebar:
+    st.title("🏗️ EMPIRE V53")
+    st.markdown("---")
+    page = st.radio("Go to:", ["Command Center", "Link Input", "Pipeline", "Logs"])
+
+# --- DATA ---
+def get_data(query):
+    return pd.read_sql_query(query, conn)
+
+# --- PAGES ---
+if page == "Command Center":
+    st.title("Command Center")
+    c1, c2, c3, c4 = st.columns(4)
+    
+    pending = pd.read_sql("SELECT COUNT(*) FROM posts WHERE status='Pending'", conn).iloc[0,0]
+    ready = pd.read_sql("SELECT COUNT(*) FROM posts WHERE status='Ready'", conn).iloc[0,0]
+    pub = pd.read_sql("SELECT COUNT(*) FROM posts WHERE status='Published'", conn).iloc[0,0]
+    failed = pd.read_sql("SELECT COUNT(*) FROM posts WHERE status='Failed'", conn).iloc[0,0]
+    
+    c1.metric("Pending (Needs Links)", pending)
+    c2.metric("Ready (Queued)", ready)
+    c3.metric("Published", pub)
+    c4.metric("Failed", failed)
+    
+    st.markdown("### 🚨 System Status")
+    errs = get_data("SELECT * FROM error_log ORDER BY id DESC LIMIT 5")
+    if not errs.empty:
+        for i, row in errs.iterrows():
+            st.error(f"[{row['created_at']}] {row['stage']} - {row['item_name']}: {row['message']}")
+    else:
+        st.success("System Healthy. No recent errors.")
+
+elif page == "Link Input":
+    st.title("⚡ Link Input Wire")
+    st.info("Paste affiliate links below to move items from 'Pending' to 'Ready'.")
+    
+    df = get_data("SELECT id, name, app_url, link FROM posts WHERE status='Pending'")
+    if not df.empty:
+        edited = st.data_editor(df, column_config={
+            "id": st.column_config.NumberColumn(disabled=True),
+            "name": st.column_config.TextColumn(disabled=True),
+            "app_url": st.column_config.LinkColumn("Info / Signup"),
+            "link": st.column_config.TextColumn("Affiliate Link (Paste Here)", required=True)
+        }, hide_index=True)
+        
+        if st.button("Save & Queue"):
+            c = conn.cursor()
+            count = 0
+            for i, row in edited.iterrows():
+                if row['link'] and len(row['link']) > 5:
+                    c.execute("UPDATE posts SET link=?, status='Ready' WHERE id=?", (row['link'], row['id']))
+                    count += 1
+            conn.commit()
+            st.success(f"Queued {count} items for production.")
+            st.rerun()
+    else:
+        st.success("No pending items!")
+
+elif page == "Pipeline":
+    st.title("📊 Production Pipeline")
+    df = get_data("SELECT * FROM posts ORDER BY id DESC")
+    st.dataframe(df)
+
+elif page == "Logs":
+    st.title("Logs")
+    if os.path.exists("logs/empire_activity.log"):
+        with open("logs/empire_activity.log", "r") as f:
+            st.text(f.read())
+'''
+
+# ==========================================
+# 3. SEED DATA (Blue Collar SaaS)
+# ==========================================
+SEED_DATA = """Tool Name,Category,Target Audience,Affiliate/URL Note
+Jobber,Field Service Management,General,"Pays ~$100+ per lead."
+Housecall Pro,Field Service Management,HVAC/Plumbing,"Focus on dispatch features."
+ServiceTitan,Enterprise,Commercial,"High ticket."
+QuickBooks Online,Accounting,All,"Contractor edition."
+FreshBooks,Invoicing,Handymen,"Easy mobile invoicing."
+Houzz Pro,Project Mgmt,Remodelers,"Winning bids."
+Procore,Construction Mgmt,Commercial,"Drawing management."
+Fieldwire,Jobsite Mgmt,Foremen,"Blueprints on iPad."
+CompanyCam,Photo Docs,Roofers,"Photo documentation."
+FleetSharp,GPS,Fleet Owners,"Fuel saving."
+Next Insurance,Insurance,All,"Instant COI."
+Buildertrend,Project Mgmt,Home Builders,"Client comms."
+Monday.com,Workflow,Office,"Scheduling."
+Simpro,Field Service,Security,"Specialized trades."
+ServiceM8,Field Service,Small Biz,"Apple ecosystem."
+NiceJob,Reputation,All,"Automated reviews."
+Tradify,Job Mgmt,Electricians,"Fast quoting."
+ClockShark,Time Tracking,Crews,"GPS time clock."
+Angi,Leads,Contractors,"Lead gen."
+Thumbtack,Leads,Handymen,"Filling schedule."
+"""
+
+# ==========================================
+# 4. CONFIG & SCRIPTS
+# ==========================================
+REQUIREMENTS = """streamlit
+pandas
+requests
+moviepy<2.0
+imageio
+imageio-ffmpeg
+toml
+psutil
+"""
+
+LAUNCH_BAT = r"""@echo off
+TITLE DTF COMMAND V53
+echo Starting Engine...
+start /B pythonw engine.py
+echo Starting Dashboard...
+streamlit run dashboard.py
+pause
+"""
+
+SECRETS_TEMPLATE = """openai_key = "sk-..."
+pplx_key = "pplx-..."
+wp_url = "https://yoursite.com"
+wp_user = "admin"
+wp_pass = "app-pass"
+daily_run_limit = 5
+"""
+
+# ==========================================
+# 5. BUILDER LOGIC
+# ==========================================
+def create_file(path, content):
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content.strip())
+
+def main():
+    print(f"🏗️  Installing EMPIRE V53 to: {PROJECT_DIR}...")
+    
+    os.makedirs(PROJECT_DIR, exist_ok=True)
+    os.makedirs(os.path.join(PROJECT_DIR, ".streamlit"), exist_ok=True)
+    
+    base = PROJECT_DIR
+    create_file(os.path.join(base, "engine.py"), ENGINE_CODE)
+    create_file(os.path.join(base, "dashboard.py"), DASHBOARD_CODE)
+    create_file(os.path.join(base, "blue_collar_seed.csv"), SEED_DATA)
+    create_file(os.path.join(base, "requirements.txt"), REQUIREMENTS)
+    create_file(os.path.join(base, "launch.bat"), LAUNCH_BAT)
+    create_file(os.path.join(base, ".streamlit", "secrets.toml"), SECRETS_TEMPLATE)
+    
+    print("\n✅ INSTALLATION COMPLETE.")
+    print("-------------------------------------------------")
+    print(f"1. Open folder: {PROJECT_DIR}")
+    print("2. Edit .streamlit/secrets.toml with your API keys.")
+    print("3. Run 'pip install -r requirements.txt'")
+    print("4. Double-click 'launch.bat'")
+    print("-------------------------------------------------")
+
+if __name__ == "__main__":
+    main()

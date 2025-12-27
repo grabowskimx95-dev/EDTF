@@ -1,0 +1,25 @@
+DTF_Empire_Titan_V100/
+├── engine.py                 # The Infinite Loop
+├── dashboard.py              # The Command Center
+├── launch.bat                # The One-Click Launcher
+├── requirements.txt
+├── .streamlit/secrets.toml
+├── migrations/               # SQL Patches (001-007)
+├── src/
+│   ├── db.py                 # Schema Definition
+│   ├── scheduler.py          # Scoring Logic
+│   ├── dedup/
+│   │   └── deduplicator.py   # Hash & Title Checks
+│   ├── pipeline/
+│   │   ├── content_generator.py  # LLM & Verification
+│   │   ├── prompt_templates.py   # Angle Logic
+│   │   ├── internal_linker.py    # Cluster Linking
+│   │   ├── tts_pipeline.py       # Audio
+│   │   ├── video_builder_pro.py  # Video
+│   │   └── publish_orchestrator.py # WP API
+│   └── finance/
+│       └── cost_accountant.py    # Ledger
+└── tools/
+    ├── run_ops.py            # Migration & Smoke Test Runner
+    ├── generate_content_plan.py # Cluster Seeder
+    └── export_state.py       # Backup Tool

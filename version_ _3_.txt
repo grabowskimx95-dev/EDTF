@@ -1,0 +1,27 @@
+version: "3"
+services:
+  # SERVICE 1: THE DASHBOARD (Strapi CMS)
+  dtf_cms:
+    image: strapi/strapi
+    container_name: dtf_cms
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_CLIENT: sqlite
+      DATABASE_FILENAME: .tmp/data.db
+    ports:
+      - "1337:1337"
+    volumes:
+      - ./cms-data:/srv/app  # Persists your blog data
+
+  # SERVICE 2: THE CREW (Python Agents)
+  dtf_agents:
+    build: ./agents
+    container_name: dtf_agents
+    restart: on-failure
+    depends_on:
+      - dtf_cms
+    env_file: .env
+    volumes:
+      - ./dtf_uploads:/app/uploads  # Maps your local upload folder to the container
+    command: python main.py

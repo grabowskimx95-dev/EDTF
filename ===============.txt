@@ -1,0 +1,129 @@
+================================================================================
+DTF EMPIRE: THE MASTER SYSTEM FILE
+================================================================================
+VERSION:        1.0 (Consolidated)
+DATE:           December 10, 2025
+CLASSIFICATION: Internal / Strategic / Restricted
+ROLE:           Lead Developer & Content Architect
+PROJECT:        Design To Finish Contracting (DTF) // Pro Tool Analysts (PTA)
+================================================================================
+
+1.0 IDENTITY & GOVERNANCE PROTOCOLS
+-----------------------------------
+1.1 PRIMARY ENTITY: DTF EMPIRE
+    - Legal Name: Design To Finish Contracting.
+    - ACRONYM CONSTRAINT: "DTF" strictly represents the contracting lifecycle: 
+      "Design" (Planning) -> "Finish" (Completion).
+    - PROHIBITED: Usage of "Down To..." slang or sexual double entendres. 
+      (Strict adherence required for Amazon/Home Depot Affiliate Compliance).
+
+1.2 SECONDARY ENTITY: PTA
+    - Name: Pro Tool Analysts.
+    - Function: The media/review arm of the empire.
+    - Constraint: Professional tone to ensure brand safety for corporate partners.
+
+1.3 BRAND VOICE
+    - Tone: High-Intellect, Authoritative, "Veteran Contractor," Strategic.
+    - Visuals: Premium, gritty but clean (Midjourney/DALL-E 3 for thumbnails).
+
+1.4 APPROVED TAGLINES
+    - "DTF: Build It. Link It. Profit."
+    - "The Blueprint for Construction Content Automation."
+    - "From Design to Finish: Consumables That Convert."
+    - "Powering Your Projects. Monetizing Your Expertise."
+
+================================================================================
+
+2.0 COMMERCIAL STRATEGY
+-----------------------
+2.1 THE MISSION
+    To automate the production of high-authority construction content that captures 
+    search traffic for high-volume consumables, converting that traffic into 
+    recurring affiliate revenue.
+
+2.2 REVENUE STREAMS
+    A) Affiliate Arbitrage:
+       - High Volume: Amazon Associates (Fasteners, tapes, generic supplies).
+       - High Value: Home Depot, Lowes, Acme Tools (Pro gear).
+    B) Direct Sponsorships:
+       - Pitching data-backed placement to brands (e.g., Loctite, Sika).
+
+2.3 CURRENT TACTICAL FOCUS: ADHESIVES
+    - Sector: Consumables (Glues, Sealants, Epoxies).
+    - Rationale: High turnover, high brand loyalty, low content competition.
+    - Target Partners: Loctite, Sika, Titebond, 3M.
+
+================================================================================
+
+3.0 THE TECHNICAL STACK (THE "HEADLESS" ENGINE)
+-----------------------------------------------
+3.1 ORCHESTRATOR: Make.com (Integromat)
+    - Function: The "Nervous System." Connects triggers to actions.
+
+3.2 THE BRAIN: OpenAI (GPT-4o) / Claude 3.5
+    - Function: Writes the content.
+    - Focus: Expert Tone, Data Tables, Technical Specs.
+
+3.3 DATA SOURCE: Apify / Bright Data
+    - Function: Scrapes pricing, specs, and availability from suppliers.
+
+3.4 LINK LAYER: Lasso / GeniusLink
+    - Function: Auto-monetization, geo-targeting, link cloaking.
+
+3.5 CMS: WordPress
+    - Function: Destination SEO asset storage.
+
+================================================================================
+
+4.0 CONTENT ARCHITECTURE (THE MODULES)
+--------------------------------------
+4.1 MODULE A: THE "PROJECT LOADOUT" GENERATOR
+    - Trigger: "200 sq ft Trex Deck"
+    - Output: Full list of consumables (Screws, Sealer, Tape).
+    - Strategy: Maximize Cart Value.
+
+4.2 MODULE B: THE "CONSUMABLE VERSUS" ENGINE
+    - Trigger: "Product A vs. Product B"
+    - Output: Automated comparison table (Price, Cure Time, Strength).
+    - Strategy: Capture High-Intent Buyers.
+
+4.3 MODULE C: THE "FLASH DEAL" ALERT
+    - Trigger: Price drop > 20% on monitored SKUs.
+    - Output: Auto-social post and email blast.
+    - Strategy: Urgency conversion.
+
+================================================================================
+
+5.0 EXECUTION ROADMAP
+---------------------
+[X] PHASE 1: FOUNDATION
+    - Defined Brand Identity (DTF/PTA).
+    - Selected Tech Stack.
+    - Established GitHub Repo (`DTF-Content-Engine`).
+
+[ ] PHASE 2: THE PILOT (ACTIVE)
+    - Focus: Adhesives & Sealants.
+    - Action: Build "Adhesive Versus" script.
+    - Goal: 10 automated comparison articles.
+
+[ ] PHASE 3: THE SCALE
+    - Batch generate 50+ posts.
+    - Activate social auto-posting.
+
+[ ] PHASE 4: THE BRAND
+    - Leverage traffic data for direct sponsorship pitches.
+
+================================================================================
+
+6.0 SYSTEM KEYS & SECRETS (PLACEHOLDERS)
+----------------------------------------
+Required for GitHub Secrets / Environment Variables:
+
+- OPENAI_API_KEY: ___________
+- MAKE_WEBHOOK_URL: ___________
+- WP_APP_PASSWORD: ___________
+- AMAZON_ASSOCIATES_TAG: ___________
+- GOOGLE_SEARCH_CONSOLE_KEY: ___________
+
+================================================================================
+END OF FILE

@@ -1,0 +1,43 @@
+# --- TASK 1: THE DEEP DIVE (Research) ---
+# Implements: "Meta-Review" & "BS Proofing"
+research_task = Task(
+    description="""
+    1. Search Reddit (r/Construction, r/Tools) for "{target_tool}" failure reports.
+    2. Search Project Farm/ToolBoxBuzz for head-to-head data.
+    3. Query the Pinecone Vector DB for the official Spec Sheet (Torque/RPM).
+    4. OUTPUT REQUIREMENT: A list of 'Verified Cons' (e.g., 'Chuck wobbles after 3 months')
+       and a 'Winner by Metric' list (e.g., 'Milwaukee = Highest Torque').
+    """,
+    agent=researcher
+)
+
+# --- TASK 2: THE ASSET ASSEMBLY (Writing) ---
+# Implements: "Trade Matrix" & "JSON Schema"
+writing_task = Task(
+    description="""
+    Using the research, populate the 'Hammer System' JSON Schema.
+    1. VISION CHECK: Look for any new photos in the 'DTF Uploads' folder matching this tool.
+       If found, insert the 'generated_caption' into the 'Jobsite Proof' section.
+    2. TRADE MATRIX: Define 3 distinct user types (e.g., Framer, Finisher, DIY).
+       Assign the correct tool to each.
+    3. ARBITRAGE: Create the 'Call to Action' module. 
+       - Button 1: Home Depot (Label: 'Check Stock').
+       - Button 2: Acme Tools (Label: 'Best Pro Price').
+    4. HOOK: Write the 'Elbow Tax' argument in the intro.
+    """,
+    agent=writer,
+    context=[research_task] # Takes the research as input
+)
+
+# --- TASK 3: THE FINAL INSPECTION ---
+# Implements: "Supervised Authority"
+compliance_task = Task(
+    description="""
+    Verify the JSON output. 
+    1. Check that the 'Trade Matrix' makes sense (don't recommend a sledgehammer for trim).
+    2. Ensure the 'BS Proof' section contains at least 2 negative points found in research.
+    3. Push the final JSON to Strapi with status 'Draft'.
+    """,
+    agent=foreman,
+    context=[writing_task]
+)

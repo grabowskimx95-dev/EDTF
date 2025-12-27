@@ -1,0 +1,9 @@
+dtf_empire/
+├── .env
+├── docker-compose.yml
+└── app/
+    ├── Dockerfile
+    ├── requirements.txt
+    ├── main.py
+    ├── database.py
+    └── models.py

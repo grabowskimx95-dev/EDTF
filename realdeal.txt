@@ -1,0 +1,41 @@
+{
+  "type": "object",
+  "title": "Trade-Specific Review with Real Media",
+  "properties": {
+    "meta_data": { "type": "object", "properties": { "target_keyword": { "type": "string" } } },
+    
+    "jobsite_proof_header": {
+      "type": "object",
+      "description": "The 'Money Shot'. The first thing the user sees is REALITY.",
+      "properties": {
+        "hero_video_url": { "type": "string", "description": "Raw .mp4 or YouTube Embed of the tool in actual use." },
+        "location_context": { "type": "string", "description": "e.g., 'Filmed on-site at a custom remodel in Belleville, IL.'" },
+        "weather_condition": { "type": "string", "description": "e.g., 'Tested in 20-degree weather to check grip slip.'" }
+      }
+    },
+
+    "trade_selector_matrix": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "user_archetype": { "type": "string" },
+          "recommendation": { "type": "string" },
+          "evidence_image_url": { "type": "string", "description": "Link to YOUR real photo matching this trade (e.g., Hammer on Trim vs Hammer on Concrete)." }
+        }
+      }
+    },
+
+    "the_wear_and_tear_log": {
+      "type": "object",
+      "description": "Photos of the tool after abuse. High conversion trust signal.",
+      "properties": {
+        "after_3_months_image": { "type": "string", "description": "Close up of the hammer face/claws." },
+        "technician_notes": { "type": "string", "description": "AI generates this from your voice note: 'Claws held up, face paint chipped off day 1.'" }
+      }
+    },
+
+    "arbitrage_links": { "type": "array", "items": { "type": "object" } }
+  },
+  "required": ["jobsite_proof_header", "trade_selector_matrix", "the_wear_and_tear_log"]
+}

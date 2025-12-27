@@ -1,0 +1,46 @@
+id: content_monetization_matrix
+namespace: dtf_empire.production
+description: Autonomous 5-Stage Content Production for $5000/Month Target
+labels:
+  target_revenue: '5000'
+
+tasks:
+  - id: 1_sentinel_scan
+    type: io.kestra.plugin.script.python.Commands
+    description: Market Trend Sentinel (from old activate.txt logic) finds a topic.
+    commands:
+      # Sentinel is reduced to finding the topic and printing it as a JSON output to Kestra.
+      - python sentinel_topic_finder.py 
+    output:
+      vars:
+        - key: topic_of_day
+          type: JSON
+
+  - id: 2_crewai_hive_execution
+    type: io.kestra.plugin.script.python.Commands
+    description: The core DTF Agent HIVE generates the full, monetized content package.
+    # This is the single, synchronous call to the CrewAI Orchestrator.
+    commands:
+      - python crewai_orchestrator.py --topic "{{ outputs['1_sentinel_scan'].topic_of_day }}"
+    
+  - id: 3_publishing_multi_vector
+    type: io.kestra.plugin.core.flow.Parallel
+    tasks:
+      - id: 3a_publish_wordpress
+        type: io.kestra.plugin.script.python.Commands
+        description: Uses the existing WP Publish Agent (from 'soverign.txt' architecture).
+        commands:
+          # The agent receives the final content and publishes it.
+          - python publish_agent.py --content-file content_monetized.md
+
+      - id: 3b_social_distribution_blast
+        type: io.kestra.plugin.script.python.Commands
+        description: Posts snippets to social media (X/YT Shorts) using the Social_Distribution_Agent.
+        commands:
+          - python social_agent.py --content-file content_monetized.md
+    
+  - id: 4_cfo_metrics_ingest
+    type: io.kestra.plugin.core.log.Logger
+    description: CFO Agent logs completion and signals Analytics for conversion tracking.
+    level: INFO
+    message: "Content ID: {{ flow.id }}. Status: DEPLOYED. Topic: {{ outputs['1_sentinel_scan'].topic_of_day }}"

@@ -1,0 +1,146 @@
+# DTF EMPIRE V100: "THE TITAN" — MASTER SYSTEM RECORD
+**Status:** Conceptual Design (Finalized)
+**Version:** 1.0.0 (Titan)
+**Scope:** Autonomous Multimedia Content Factory with Cluster Strategy
+
+---
+
+## 1.0 EXECUTIVE ARCHITECTURE
+The "Titan" system is a **closed-loop autonomous publishing engine**. Unlike previous versions that operated linearly (One SaaS -> One Post), Titan operates **strategically** (One SaaS -> Content Cluster -> Interlinked Assets).
+
+
+
+### 1.1 Core Directives
+1.  **Strategic Depth:** We do not just review a tool; we dominate the search intent around it (Review, Pricing, vs Competitor, How-to).
+2.  **Multimedia Dominance:** Text is insufficient. Every node must have Audio (TTS) and Video (MoviePy) to capture dwell time.
+3.  **Operational Immortality:** The system must self-heal (migrations), self-protect (deduplication), and self-regulate (resource guard).
+
+### 1.2 System Modules
+| Module | Function |
+| :--- | :--- |
+| **Engine (`engine.py`)** | The always-on conductor. Orchestrates the infinite loop. |
+| **Scheduler (`scheduler.py`)** | The brain. Decides *what* to work on using Weighted Scoring. |
+| **Cluster Seeder (`generate_content_plan.py`)** | The strategist. Explodes one SaaS input into 5 distinct content plans. |
+| **Generator (`content_generator.py`)** | The creative. Writes content, verifies claims, and prompts DALL-E. |
+| **Media Factory (`tts_pipeline.py`, `video_builder.py`)** | The studio. Produces MP3 narration and MP4 video summaries. |
+| **Orchestrator (`publish_orchestrator.py`)** | The diplomat. Handles WP Auth, Media Uploads, and Idempotency. |
+| **Linker (`internal_linker.py`)** | The architect. Connects published posts to build SEO authority. |
+
+---
+
+## 2.0 UNIFIED DATA SCHEMA
+The database (`empire.db`) is the single source of truth. It uses SQLite in WAL mode for high-concurrency performance.
+
+### 2.1 Table: `posts` (The Master Registry)
+This table merges V73 Core, V88 Scoring, V90 Media, and V100 Cluster fields.
+
+| Column | Type | Description |
+| :--- | :--- | :--- |
+| `id` | INTEGER PK | Unique ID. |
+| `name` | TEXT UNIQUE | The working title of the post (e.g., "Jobber Review"). |
+| `slug` | TEXT | SEO-friendly URL slug (e.g., `jobber-review-2025`). |
+| `niche` | TEXT | Broad category (e.g., "Field Service"). |
+| `link` | TEXT | Affiliate link. |
+| `cluster_key` | TEXT | **[V100]** Grouping ID (e.g., `jobber`). Links related posts. |
+| `angle` | TEXT | **[V100]** Intent: `review`, `pricing`, `vs`, `howto`. |
+| `metadata` | JSON | **[V100]** Store hooks, audience, category from SaaS DB. |
+| `status` | TEXT | `Pending`, `Ready`, `Generating`, `NeedsReview`, `Published`, `Duplicate`, `Error`. |
+| `priority` | INTEGER | Operator override (0-10). |
+| `score` | REAL | Calculated execution value. |
+| `content_hash` | TEXT | SHA-256 hash of body to prevent duplicate generation. |
+| `image_url` | TEXT | Local path to generated JPG. |
+| `video_path` | TEXT | Local path to generated MP4. |
+| `audio_path` | TEXT | Local path to generated MP3. |
+| `captions_path`| TEXT | Local path to generated SRT. |
+| `wp_post_id` | INTEGER | WordPress Post ID (if published). |
+| `wp_url` | TEXT | Live URL (used for internal linking). |
+| `verification_summary` | TEXT | JSON blob of claim verification results. |
+| `last_attempt_at` | ISO8601 | Timestamp of last try. |
+| `last_success_at` | ISO8601 | Timestamp of last success (for recency penalty). |
+
+### 2.2 Table: `finance_ledger` (Cost Control)
+| Column | Type | Description |
+| :--- | :--- | :--- |
+| `id` | INTEGER PK | Transaction ID. |
+| `product_name` | TEXT | Context of the spend. |
+| `tokens_used` | INTEGER | LLM tokens. |
+| `searches_count`| INTEGER | Google CSE calls. |
+| `est_cost_usd` | REAL | Total cost (LLM + Audio + Image + Search). |
+| `note` | TEXT | Stage context (e.g., "generation", "media"). |
+
+---
+
+## 3.0 OPERATIONAL LOGIC FLOWS
+
+### 3.1 The "Cluster Expansion" Logic
+*Trigger:* Operator runs `seed_saas_queue.py` or adds a single tool via Dashboard.
+*Input:* Tool Name: "Procore".
+*Process:*
+1.  Check if `cluster_key='procore'` exists.
+2.  If not, generate 4 rows in `posts`:
+    * **Main Review:** `angle='review'`
+    * **Pricing Guide:** `angle='pricing'`
+    * **Competitor Vs:** `angle='vs'` (requires mapping or lookup)
+    * **How-to:** `angle='howto'`
+3.  Set all to `status='Pending'`.
+
+### 3.2 The "Next Best Action" Scheduler
+*Trigger:* Engine Loop.
+*Logic:* Query all `status='Ready'` items. Calculate Score:
+$$Score = (Priority \times 1000) + (Value \times 100) + (DiversityBonus) - (RecencyPenalty \times 50) - (ErrorPenalty \times 25)$$
+* **Value:** Defined by Niche (Enterprise = High, Lead Gen = Med).
+* **Diversity:** Boosts items from niches not published in the last 24h.
+* **Recency:** Penalizes items published recently (prevents spamming one topic).
+
+### 3.3 The "Titan" Generation Pipeline
+1.  **Context Loading:** Fetch `metadata` (Hook, Audience) and `cluster_key` neighbors.
+2.  **Prompt Selection:** Choose template based on `angle` (e.g., Pricing template forbids inventing numbers).
+3.  **Internal Linking:** Inject HTML block: "Related Reads: [Link to Sibling 1], [Link to Sibling 2]".
+4.  **Drafting:** Generate Blog HTML & Video Script via GPT-4o.
+5.  **Hashing:** Calculate `content_hash`. If exists in DB -> **STOP** (Mark Duplicate).
+6.  **Verification:** Verify claims via Google CSE. If Confidence < 65% -> **STOP** (Mark NeedsReview).
+
+### 3.4 The Media Factory
+1.  **Image:** Generate DALL-E 3 image based on "Audience" metadata (e.g., "Plumber in van").
+2.  **Audio:** Send Video Script to OpenAI TTS (`gpt-4o-mini-tts`, `onyx` voice).
+3.  **Captions:** Parse Script into SRT format locally.
+4.  **Video:** MoviePy composes: Background Image + Audio Track + Burned-in Captions (optional) -> MP4.
+
+### 3.5 Orchestrated Publishing
+1.  **Pre-Flight:** Check WordPress for existing post with same Title. If found -> **STOP** (Mark Duplicate).
+2.  **Upload:** Send JPG and MP4 to WP Media Library. Store IDs.
+3.  **Taxonomy:** Resolve/Create Categories ("Software") and Tags ("Field Service").
+4.  **Publish:** Create Post with:
+    * Content (HTML)
+    * Featured Image (Media ID)
+    * Embedded Video (Video Block)
+    * Categories/Tags
+5.  **Post-Flight:** Save `wp_url` to DB to enable linking for future cluster members.
+
+---
+
+## 4.0 CONFIGURATION & SECRETS MAP
+
+### 4.1 `secrets.toml`
+This file is **never** committed.
+```toml
+[system]
+autopilot_enabled = true
+daily_run_limit = 10
+
+[wordpress]
+wp_url = "..."
+wp_user = "..."
+wp_application_password = "..."
+
+[api_keys]
+openai_api_key = "..."
+google_search_api_key = "..."
+google_cx_id = "..."
+
+[tts]
+enabled = true
+model = "gpt-4o-mini-tts"
+
+[dedup]
+wp_search_enabled = true

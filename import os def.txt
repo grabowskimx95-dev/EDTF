@@ -1,0 +1,229 @@
+import os
+
+def create_file(path, content):
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content.strip())
+    print(f"✅ Created: {path}")
+
+def create_folder(path):
+    if not os.path.exists(path):
+        os.makedirs(path)
+        print(f"✅ Created Folder: {path}")
+
+# --- CONTENT DEFINITIONS ---
+
+DOCKER_COMPOSE = """
+version: "3"
+services:
+  dtf_cms:
+    image: strapi/strapi
+    container_name: dtf_cms
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_CLIENT: sqlite
+      DATABASE_FILENAME: .tmp/data.db
+    ports:
+      - "1337:1337"
+    volumes:
+      - ./cms-data:/srv/app
+
+  dtf_agents:
+    build: ./agents
+    container_name: dtf_agents
+    restart: on-failure
+    depends_on:
+      - dtf_cms
+    env_file: .env
+    volumes:
+      - ./dtf_uploads:/app/uploads
+    command: python main.py
+"""
+
+ENV_FILE = """
+# --- OPENAI KEYS (REQUIRED) ---
+OPENAI_API_KEY=sk-proj-YOUR_KEY_HERE
+OPENAI_MODEL_NAME=gpt-4o
+
+# --- PINECONE KEYS (OPTIONAL) ---
+PINECONE_API_KEY=YOUR_PINECONE_KEY
+PINECONE_ENV=gcp-starter
+
+# --- STRAPI KEYS (AUTO GENERATED) ---
+APP_KEYS=randomKey1,randomKey2
+API_TOKEN_SALT=randomSalt
+ADMIN_JWT_SECRET=randomSecret
+TRANSFER_TOKEN_SALT=randomTransfer
+JWT_SECRET=randomJwt
+STRAPI_API_URL=http://dtf_cms:1337/api/review-articles
+"""
+
+DOCKERFILE = """
+FROM python:3.11-slim
+WORKDIR /app
+RUN apt-get update && apt-get install -y gcc
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
+CMD ["python", "main.py"]
+"""
+
+REQUIREMENTS = """
+crewai
+langchain
+openai
+requests
+watchdog
+python-dotenv
+pinecone-client
+"""
+
+MAIN_PY = """
+import os
+import time
+import json
+import requests
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
+from crewai import Agent, Task, Crew, Process
+from langchain.tools import tool
+
+# --- CONFIG ---
+UPLOAD_FOLDER = "/app/uploads"
+STRAPI_URL = os.getenv("STRAPI_API_URL", "http://dtf_cms:1337/api/review-articles")
+
+print("👷 DTF AGENT CREW INITIALIZED. WATCHING FOR JOBSITE PHOTOS...")
+
+# --- TOOLS ---
+
+@tool("Vision Analysis Tool")
+def analyze_jobsite_photo(file_path: str):
+    \"\"\"Analyzes a jobsite photo to extract tool brand, context, and condition.\"\"\"
+    # SIMULATION: This mocks the GPT-4o Vision response for the DeWalt photo
+    print(f"👀 VISION AGENT: Analyzing {file_path}...")
+    return {
+        "tool": "DeWalt DWE7491RS Table Saw",
+        "features": ["Rolling Stand", "Rack & Pinion Fence"],
+        "context": "Driveway/Jobsite Setup",
+        "condition": "Dusty, Used, Good Condition",
+        "caption": "The Rack and Pinion fence holding true after 6 months of abuse."
+    }
+
+@tool("Strapi CMS Pusher")
+def push_to_strapi(article_json: str):
+    \"\"\"Pushes the final structured review to the Strapi CMS.\"\"\"
+    try:
+        data = json.loads(article_json)
+        # In a real scenario, you would uncomment the request below:
+        # requests.post(STRAPI_URL, json={"data": data}) 
+        print(f"🚀 SUCCESS: Pushed '{data.get('title', 'Article')}' to Dashboard.")
+        print(f"📝 JSON PAYLOAD: {json.dumps(data, indent=2)}")
+        return "Upload Complete"
+    except Exception as e:
+        return f"Error pushing to CMS: {str(e)}"
+
+# --- AGENTS ---
+
+researcher = Agent(
+    role='Senior Construction Analyst',
+    goal='Identify tool failures and real-world usage context from photos.',
+    backstory='You look for dirt, rust, and complaints. You hate "shiny" tools. You trust no one.',
+    tools=[analyze_jobsite_photo],
+    verbose=True,
+    allow_delegation=False
+)
+
+writer = Agent(
+    role='Technical Copywriter',
+    goal='Write trade-specific reviews using the "Elbow Tax" angle.',
+    backstory='You sell high-ticket tools by focusing on long-term health and efficiency. You NEVER write generic fluff.',
+    tools=[push_to_strapi],
+    verbose=True,
+    allow_delegation=False
+)
+
+# --- TRIGGER LOGIC ---
+
+class UploadHandler(FileSystemEventHandler):
+    def on_created(self, event):
+        if event.is_directory: return
+        print(f"📸 NEW ASSET DETECTED: {event.src_path}")
+        
+        # 1. DEFINE TASKS
+        task1 = Task(
+            description=f"Analyze the photo at {event.src_path}. Extract the tool name, features, and condition.",
+            agent=researcher,
+            expected_output="A summary of the tool features and condition."
+        )
+        
+        task2 = Task(
+            description=\"\"\"
+            Write a 'Trade-Specific Review' based on the photo analysis.
+            1. Title: Catchy, referencing the tool.
+            2. Hook: Use the 'Elbow Tax' angle (Health vs Cost).
+            3. Trade Matrix: Create recommendations for 'Framer' vs 'Finisher'.
+            4. Output MUST be a valid JSON string with fields: title, intro_hook, trade_matrix.
+            5. Use the 'Strapi CMS Pusher' tool to save it.
+            \"\"\",
+            agent=writer,
+            expected_output="JSON string pushed to CMS."
+        )
+
+        # 2. RUN CREW
+        crew = Crew(
+            agents=[researcher, writer], 
+            tasks=[task1, task2],
+            process=Process.sequential
+        )
+        crew.kickoff()
+
+if __name__ == "__main__":
+    observer = Observer()
+    observer.schedule(UploadHandler(), UPLOAD_FOLDER, recursive=False)
+    observer.start()
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        observer.stop()
+    observer.join()
+"""
+
+RUN_BAT = """
+@echo off
+echo STARTING THE DTF EMPIRE SYSTEM...
+echo 1. Launching Strapi CMS...
+echo 2. Waking up the Agent Crew...
+docker-compose up --build -d
+echo ---------------------------------------------------
+echo SUCCESS. Dashboard is live at http://localhost:1337/admin
+echo Drop a photo in the 'dtf_uploads' folder to trigger the crew.
+echo ---------------------------------------------------
+pause
+"""
+
+# --- EXECUTION ---
+
+ROOT_DIR = "dtf_empire"
+AGENTS_DIR = os.path.join(ROOT_DIR, "agents")
+UPLOADS_DIR = os.path.join(ROOT_DIR, "dtf_uploads")
+CMS_DATA_DIR = os.path.join(ROOT_DIR, "cms-data")
+
+# 1. Create Folders
+create_folder(ROOT_DIR)
+create_folder(AGENTS_DIR)
+create_folder(UPLOADS_DIR)
+create_folder(CMS_DATA_DIR)
+
+# 2. Create Root Files
+create_file(os.path.join(ROOT_DIR, "docker-compose.yml"), DOCKER_COMPOSE)
+create_file(os.path.join(ROOT_DIR, ".env"), ENV_FILE)
+create_file(os.path.join(ROOT_DIR, "run_empire.bat"), RUN_BAT)
+
+# 3. Create Agent Files
+create_file(os.path.join(AGENTS_DIR, "Dockerfile"), DOCKERFILE)
+create_file(os.path.join(AGENTS_DIR, "requirements.txt"), REQUIREMENTS)
+create_file(os.path.join(AGENTS_DIR, "main.py"), MAIN_PY)
+
+print("\n🚀 BUILD COMPLETE.")
+print("1

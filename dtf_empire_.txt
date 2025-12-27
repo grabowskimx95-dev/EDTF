@@ -1,0 +1,9 @@
+dtf_empire/
+├── docker-compose.yml       # The Orchestrator
+├── .env                     # Your Keys (API Secrets)
+├── agents/
+│   ├── Dockerfile           # Instructions to build the Agent container
+│   ├── requirements.txt     # Python libraries (CrewAI, LangChain)
+│   ├── main.py              # The Master Script (Vision + Writer + Pusher)
+│   └── tools.py             # Custom tools (Vision API, Pinecone)
+└── dtf_uploads/             # FOLDER: You drop photos here from your phone

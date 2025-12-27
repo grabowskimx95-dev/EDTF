@@ -1,0 +1,86 @@
+import os
+import textwrap
+import sys
+
+PROJECT_DIR = "DTF_Command_HQ_V52"
+
+# =========================
+#  ENGINE CODE (V52)
+# =========================
+ENGINE_CODE = r'''import base64
+import json
+import logging
+import os
+import re
+import shutil
+import sqlite3
+import time
+from datetime import date, datetime
+
+import requests
+import toml
+from moviepy.editor import AudioFileClip, ColorClip, CompositeVideoClip, ImageClip
+
+try:
+    import psutil
+except ImportError:
+    psutil = None
+
+DB_FILE = "empire.db"
+SECRETS_PATH = os.path.join(".streamlit", "secrets.toml")
+LOG_DIR = "logs"
+LOG_FILE = os.path.join(LOG_DIR, "empire_activity.log")
+PACKET_ROOT = "packets"
+BACKUP_DIR = "backups"
+
+os.makedirs(LOG_DIR, exist_ok=True)
+os.makedirs(PACKET_ROOT, exist_ok=True)
+os.makedirs(BACKUP_DIR, exist_ok=True)
+
+FFMPEG_AVAILABLE = shutil.which("ffmpeg") is not None
+
+def rotate_log(max_bytes=5*1024*1024, backups=3):
+    if not os.path.exists(LOG_FILE):
+        return
+    try:
+        size = os.path.getsize(LOG_FILE)
+        if size <= max_bytes:
+            return
+        for i in range(backups, 0, -1):
+            src = f"{LOG_FILE}.{i}"
+            dst = f"{LOG_FILE}.{i+1}"
+            if os.path.exists(src):
+                if i == backups:
+                    os.remove(src)
+                else:
+                    os.replace(src, dst)
+        rotated = f"{LOG_FILE}.1"
+        if os.path.exists(rotated):
+            os.remove(rotated)
+        os.replace(LOG_FILE, rotated)
+    except Exception as e:
+        print("Log rotation error:", e)
+
+rotate_log()
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_FILE, encoding="utf-8"),
+        logging.StreamHandler()
+    ]
+)
+
+def get_conn():
+    return sqlite3.connect(DB_FILE)
+
+def init_db():
+    conn = get_conn()
+    c = conn.cursor()
+
+    c.execute("""CREATE TABLE IF NOT EXISTS posts (
+        id INTEGER PRIMARY KEY,
+        name TEXT UNIQUE,
+        niche TEXT,
+        link TEXT,
